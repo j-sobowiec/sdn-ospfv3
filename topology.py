@@ -43,23 +43,18 @@ def make_frr_config(hostname, router_id, active_interfaces, passive_interfaces=(
         "!",
     ]
 
-    for interface in active_interfaces:
-        lines += [
-            f"interface {interface}",
-            " ipv6 ospf6 area 0.0.0.0",
-            " ipv6 ospf6 network point-to-point",
-            "exit",
-            "!",
-        ]
-
-    for interface in passive_interfaces:
-        lines += [
-            f"interface {interface}",
-            " ipv6 ospf6 area 0.0.0.0",
-            " ipv6 ospf6 passive",
-            "exit",
-            "!",
-        ]
+    for interfaces, mode in (
+        (active_interfaces, "network point-to-point"),
+        (passive_interfaces, "passive"),
+    ):
+        for interface in interfaces:
+            lines.extend((
+                f"interface {interface}",
+                " ipv6 ospf6 area 0.0.0.0",
+                f" ipv6 ospf6 {mode}",
+                "exit",
+                "!",
+            ))
 
     return "\n".join(lines) + "\n"
 
@@ -190,35 +185,23 @@ def main():
         net.addLink(s1, h1)
 
         info("*** IPv6 and OSPFv3 configuration\n")
-        configure_router(
-            r1,
-            {
+        for router, router_id, addresses in (
+            (r1, "1.1.1.1", {
                 "r1-eth0": "2001:db8:12::1/64",
                 "r1-eth1": "2001:db8:31::1/64",
                 "r1-eth2": "2001:db8:10::1/64",
-            },
-            router_id="1.1.1.1",
-            active_interfaces=("r1-eth0", "r1-eth1", "r1-eth2"),
-            passive_interfaces=(),
-        )
-        configure_router(
-            r2,
-            {
+            }),
+            (r2, "2.2.2.2", {
                 "r2-eth0": "2001:db8:12::2/64",
                 "r2-eth1": "2001:db8:23::2/64",
-            },
-            router_id="2.2.2.2",
-            active_interfaces=("r2-eth0", "r2-eth1"),
-        )
-        configure_router(
-            r3,
-            {
+            }),
+            (r3, "3.3.3.3", {
                 "r3-eth0": "2001:db8:23::3/64",
                 "r3-eth1": "2001:db8:31::3/64",
-            },
-            router_id="3.3.3.3",
-            active_interfaces=("r3-eth0", "r3-eth1"),
-        )
+            }),
+        ):
+            configure_router(router, addresses, router_id=router_id,
+                             active_interfaces=tuple(addresses))
 
         h1.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=0 >/dev/null")
         h1.cmd("ip link set dev h1-eth0 up")

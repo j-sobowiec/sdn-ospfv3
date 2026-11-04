@@ -7,13 +7,14 @@ from scapy.contrib.ospf import (
     OSPFv3_Intra_Area_Prefix_LSA,
     OSPFv3_Link,
     OSPFv3_Link_LSA,
+    OSPFv3_LSA_Hdr,
     OSPFv3_Prefix_Item,
     OSPFv3_Router_LSA,
 )
 
 from ospfv3 import config as cfg
+from ospfv3.packet import encode_ospfv3_lsu_body
 from ospfv3.lsa import (
-    finalize_ospfv3_lsa_checksum,
     next_ospfv3_lsa_sequence,
     ospfv3_lsa_type_description,
     lsa_sequence_signed,
@@ -67,12 +68,7 @@ class LocalLSA:
         the actual increment.
         """
 
-        interface_lsid = socket.inet_ntoa(
-            struct.pack(
-                "!I",
-                cfg.INTERFACE_ID
-            )
-        )
+        interface_lsid = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
 
         changed = False
         recovered = 0
@@ -163,9 +159,7 @@ class LocalLSA:
         if neighbor_router_id is None:
             return None
 
-        local_interface_id = socket.inet_ntoa(
-            struct.pack("!I", cfg.INTERFACE_ID)
-        )
+        local_interface_id = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
 
         for lsa in self.lsdb.values():
             if lsa["ls_type"] != 0x2001:
@@ -196,6 +190,16 @@ class LocalLSA:
 
         return None
 
+    @staticmethod
+    def _prefix_item(prefix, length, metric):
+        network = ipaddress.IPv6Network(f"{prefix}/{length}", strict=False)
+        return OSPFv3_Prefix_Item(
+            prefixlen=length,
+            prefixoptions=0,
+            metric=metric,
+            prefix=f"{network.network_address}/{length}",
+        )
+
     def build_router(self, neighbor_router_id):
         if neighbor_router_id is None:
             self.logger.warning(
@@ -221,7 +225,6 @@ class LocalLSA:
             id="0.0.0.0",
             adrouter=cfg.ROUTER_ID,
             seq=self.router_sequence,
-            chksum=0,
             flags=0,
             options=cfg.OPTIONS,
             linklist=[
@@ -236,46 +239,28 @@ class LocalLSA:
             ],
         )
 
-        return finalize_ospfv3_lsa_checksum(bytes(lsa))
+        return bytes(lsa)
 
     def build_prefix(self):
-        network = ipaddress.IPv6Network(
-            f"{cfg.LAN_PREFIX}/{cfg.LAN_PREFIX_LEN}",
-            strict=False,
-        )
-
         lsa = OSPFv3_Intra_Area_Prefix_LSA(
             age=0,
             type=0x2009,
             id="0.0.0.0",
             adrouter=cfg.ROUTER_ID,
             seq=self.prefix_sequence,
-            chksum=0,
             prefixes=1,
             reflstype=0x2001,
             reflsid="0.0.0.0",
             refadrouter=cfg.ROUTER_ID,
-            prefixlist=[
-                OSPFv3_Prefix_Item(
-                    prefixlen=cfg.LAN_PREFIX_LEN,
-                    prefixoptions=0,
-                    metric=cfg.LAN_PREFIX_METRIC,
-                    prefix=f"{network.network_address}/{cfg.LAN_PREFIX_LEN}",
-                )
-            ],
+            prefixlist=[self._prefix_item(
+                cfg.LAN_PREFIX, cfg.LAN_PREFIX_LEN, cfg.LAN_PREFIX_METRIC
+            )],
         )
 
-        return finalize_ospfv3_lsa_checksum(bytes(lsa))
+        return bytes(lsa)
 
     def build_link(self):
-        network = ipaddress.IPv6Network(
-            f"{cfg.TRANSIT_PREFIX}/{cfg.TRANSIT_PREFIX_LEN}",
-            strict=False,
-        )
-
-        interface_lsid = socket.inet_ntoa(
-            struct.pack("!I", cfg.INTERFACE_ID)
-        )
+        interface_lsid = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
 
         lsa = OSPFv3_Link_LSA(
             age=0,
@@ -283,22 +268,16 @@ class LocalLSA:
             id=interface_lsid,
             adrouter=cfg.ROUTER_ID,
             seq=self.link_sequence,
-            chksum=0,
             prio=cfg.ROUTER_PRIORITY,
             options=cfg.OPTIONS,
             lladdr=cfg.LINK_LOCAL,
             prefixes=1,
-            prefixlist=[
-                OSPFv3_Prefix_Item(
-                    prefixlen=cfg.TRANSIT_PREFIX_LEN,
-                    prefixoptions=0,
-                    metric=0,
-                    prefix=f"{network.network_address}/{cfg.TRANSIT_PREFIX_LEN}",
-                )
-            ],
+            prefixlist=[self._prefix_item(
+                cfg.TRANSIT_PREFIX, cfg.TRANSIT_PREFIX_LEN, 0
+            )],
         )
 
-        return finalize_ospfv3_lsa_checksum(bytes(lsa))
+        return bytes(lsa)
 
     def install(self, raw_lsa):
         if len(raw_lsa) < 20:
@@ -306,41 +285,18 @@ class LocalLSA:
                 "Local LSA is too short"
             )
 
-        (
-            ls_age,
-            ls_type,
-            link_state_id,
-            advertising_router,
-            sequence,
-            checksum,
-            length
-        ) = struct.unpack(
-            "!HHIIIHH",
-            raw_lsa[:20]
-        )
-
-        link_state_id = socket.inet_ntoa(
-            struct.pack("!I", link_state_id)
-        )
-
-        advertising_router = socket.inet_ntoa(
-            struct.pack("!I", advertising_router)
-        )
-
-        key = (
-            ls_type,
-            link_state_id,
-            advertising_router
-        )
+        # Decode only the fixed header; keep the original body unmodified.
+        header = OSPFv3_LSA_Hdr(bytes(raw_lsa[:20]))
+        key = (header.type, header.id, header.adrouter)
 
         self.entries[key] = {
-            "ls_age": ls_age,
-            "ls_type": ls_type,
-            "link_state_id": link_state_id,
-            "advertising_router": advertising_router,
-            "ls_sequence": sequence,
-            "ls_checksum": checksum,
-            "ls_length": length,
+            "ls_age": header.age,
+            "ls_type": header.type,
+            "link_state_id": header.id,
+            "advertising_router": header.adrouter,
+            "ls_sequence": header.seq,
+            "ls_checksum": header.chksum,
+            "ls_length": header.len,
             "raw_lsa": raw_lsa,
             "_originated_at": time.monotonic()
         }
@@ -401,10 +357,7 @@ class LocalLSA:
             )
         ]
 
-        return (
-            struct.pack("!I", len(lsas))
-            + b"".join(lsas)
-        )
+        return encode_ospfv3_lsu_body(lsas)
 
     def build_pending_body(self, pending):
         if not pending:
@@ -434,12 +387,7 @@ class LocalLSA:
         if not lsas:
             return None
 
-        body = (
-            struct.pack("!I", len(lsas))
-            + b"".join(lsas)
-        )
-
-        return body, len(lsas)
+        return encode_ospfv3_lsu_body(lsas), len(lsas)
 
     def reoriginate(self, neighbor_router_id, reason):
         if not self.entries:

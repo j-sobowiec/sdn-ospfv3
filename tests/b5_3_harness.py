@@ -42,7 +42,11 @@ class Wire:
 
 class Ether(Wire): pass
 class IP6(Wire): pass
-class ICMP(Wire): pass
+class ICMP(Wire):
+    def __init__(self, **kw):
+        # Match the default ICMPv6 Code=0 of real Ryu packet classes.
+        kw.setdefault('code', 0)
+        super().__init__(**kw)
 class ND(Wire): pass
 class Echo(Wire):
     @property
@@ -144,7 +148,15 @@ BASE = dict(cfg=CFG, ipaddress=ipaddress, packet=PACKET, ethernet=ETHERNET,
             struct=struct, socket=socket, time=time,
             ofproto_v1_3=NS(OFP_VERSION=OFP.OFP_VERSION))
 DataPlane = load_class(DATA_PATH, 'DataPlane', BASE)
-Controller = load_class(CTRL_PATH, 'OSPFv3Controller', {**BASE, 'DataPlane':DataPlane})
+# The OpenFlow methods live in a separate production mixin as of M03.
+# The AST test harness still executes the original unmodified method bodies,
+# without starting Ryu's eventlet threads.
+OpenFlowMixin = load_class(ROOT / 'controller_openflow.py', 'OpenFlowMixin', BASE)
+# M05: load real TX and timer method ASTs; preserve lifecycle tests without Ryu.
+OSPFTransmitMixin = load_class(ROOT / 'ospfv3/controller_tx.py', 'OSPFTransmitMixin', BASE)
+OSPFTimerMixin = load_class(ROOT / 'ospfv3/controller_timers.py', 'OSPFTimerMixin', BASE)
+ControllerAST = load_class(CTRL_PATH, 'OSPFv3Controller', {**BASE, 'DataPlane':DataPlane})
+Controller = type('Controller', (ControllerAST, OSPFTransmitMixin, OSPFTimerMixin, OpenFlowMixin), {})
 
 def make_controller(route=True, ready=True):
     ctl = Controller.__new__(Controller)
@@ -170,8 +182,10 @@ def flowmods(dp, command=None):
 
 def ns(src=LAN_IP, dst='2001:db8:23::3', proto=58, eth_src=LAN_MAC,
        eth_dst=CFG.ROUTER_MAC, data=None):
+    # RFC 4861 NS packets must carry Hop Limit 255 (ordinary IPv6 still 64).
+    hop_limit = 255 if isinstance(data, ICMP) and data.type_ == 135 else 64
     protos = [Ether(src=eth_src, dst=eth_dst, ethertype=0x86dd),
-              IP6(src=src, dst=dst, nxt=proto, hop_limit=64)]
+              IP6(src=src, dst=dst, nxt=proto, hop_limit=hop_limit)]
     if data is not None:
         protos.append(data)
     return incoming(*protos)

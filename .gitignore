@@ -1,0 +1,23 @@
+# Python cache and compiled modules
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# Python environments and generated artifacts
+.venv/
+venv/
+ryu-env/
+*.egg-info/
+build/
+dist/
+
+# Local logs and historical copies
+*.log
+*.bak
+*.bak_*
+
+# IDE / OS
+.vscode/
+.DS_Store

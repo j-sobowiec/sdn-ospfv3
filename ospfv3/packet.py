@@ -92,6 +92,27 @@ def build_ospfv3_lsr(lsa_requests, dst_ipv6):
     return _serialize_ospf(3, OSPFv3_LSReq(requests=requests), dst_ipv6)
 
 
+
+def encode_ospfv3_lsu_body(raw_lsas):
+    """Build an LSU body using Scapy, preserving each LSA's raw wire bytes.
+
+    Do not decode/rebuild the LSAs: opaque, unknown, malformed and MaxAge
+    advertisements must retain their exact original bytes. The 4-byte
+    LSACount belongs to Scapy's OSPFv3_LSUpd FieldLenField.
+    """
+    packets = []
+    for index, raw_lsa in enumerate(raw_lsas):
+        try:
+            memoryview(raw_lsa)
+        except TypeError:
+            raise TypeError(
+                "sequence item %d: expected a bytes-like object, %s found"
+                % (index, type(raw_lsa).__name__)
+            ) from None
+        packets.append(Raw(load=bytes(raw_lsa)))
+    return bytes(OSPFv3_LSUpd(lsalist=packets))
+
+
 def build_ospfv3_lsu(lsu_body, dst_ipv6):
     """Wrap the existing LS Update body; LSA encoding migrates separately."""
     if len(lsu_body) < 4:

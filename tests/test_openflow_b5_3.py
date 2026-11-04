@@ -231,22 +231,30 @@ class TestPacketInAndBarrier(unittest.TestCase):
         packet_in(ctl,frame,2)
         self.assertFalse([x for x in ctl.datapath.sent if x.kind=='packet_out'])
 
-    def test_ipv6_tcp_first_packet_does_not_process_currently(self):
-        """Characterization (not endorsement): documents observed ICMP-only path."""
+    def test_ipv6_tcp_first_packet_is_forwarded(self):
+        """W02d: first TCP packet is forwarded with existing OF1.3 actions."""
         ctl=make_controller(ready=False)
         ctl.data_plane.learn_transit_router(1,TRANSIT_IP,TRANSIT_MAC)
         frame=ns(src=LAN_IP,dst='2001:db8:23::3',proto=6)
         packet_in(ctl,frame,2)
-        self.assertFalse([x for x in ctl.datapath.sent if x.kind=='packet_out'])
-        self.assertNotIn(LAN_IP,ctl.data_plane.lan_hosts)
+        packets = [x for x in ctl.datapath.sent if x.kind=='packet_out']
+        self.assertEqual(len(packets), 1)
+        self.assertEqual(packets[0].data, frame)
+        self.assertEqual([a.kind for a in packets[0].actions],
+                         ['dec_ttl', 'set_field', 'set_field', 'output'])
+        self.assertEqual(ctl.data_plane.lan_hosts[LAN_IP], LAN_MAC)
 
-    def test_ipv6_udp_first_packet_does_not_process_currently(self):
+    def test_ipv6_udp_first_packet_is_forwarded(self):
         ctl=make_controller(ready=False)
         ctl.data_plane.learn_transit_router(1,TRANSIT_IP,TRANSIT_MAC)
         frame=ns(src=LAN_IP,dst='2001:db8:23::3',proto=17)
         packet_in(ctl,frame,2)
-        self.assertFalse([x for x in ctl.datapath.sent if x.kind=='packet_out'])
-        self.assertNotIn(LAN_IP,ctl.data_plane.lan_hosts)
+        packets = [x for x in ctl.datapath.sent if x.kind=='packet_out']
+        self.assertEqual(len(packets), 1)
+        self.assertEqual(packets[0].data, frame)
+        self.assertEqual([a.kind for a in packets[0].actions],
+                         ['dec_ttl', 'set_field', 'set_field', 'output'])
+        self.assertEqual(ctl.data_plane.lan_hosts[LAN_IP], LAN_MAC)
 
     def test_ospf_packet_not_handled_by_lan_data_path(self):
         ctl=make_controller(ready=False)

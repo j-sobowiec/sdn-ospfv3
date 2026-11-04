@@ -22,6 +22,14 @@ from ospfv3.lsa import (
 )
 
 
+# Scapy decodes LSA bodies in ospfv3.lsa; unsupported types keep only the header.
+_LSA_BODY_PARSERS = {
+    0x2001: ("router_lsa", "Router-LSA", parse_ospfv3_router_lsa),
+    0x0008: ("link_lsa", "Link-LSA", parse_ospfv3_link_lsa),
+    0x2009: ("intra_area_prefix_lsa", "Intra-Area-Prefix-LSA", parse_ospfv3_intra_area_prefix_lsa),
+}
+
+
 def _packet_bytes(ospf_data, pkt_len, minimum_length):
     """Limit Scapy to the declared OSPF length (excluding Ethernet padding)."""
     if pkt_len < minimum_length:
@@ -30,15 +38,13 @@ def _packet_bytes(ospf_data, pkt_len, minimum_length):
         raise ValueError(
             f"truncated OSPF packet: declared={pkt_len} available={len(ospf_data)}"
         )
-    if len(ospf_data) < 16:
-        raise ValueError("packet is shorter than OSPF header")
     if int.from_bytes(ospf_data[2:4], "big") != pkt_len:
         raise ValueError("OSPF header length differs from pkt_len")
     return bytes(ospf_data[:pkt_len])
 
 
-def _decode_packet(ospf_data, pkt_len, minimum_length, packet_class):
-    raw_packet = _packet_bytes(ospf_data, pkt_len, minimum_length)
+def _decode_packet(raw_packet, packet_class):
+    """Decode bytes already length-checked by the public parser."""
     try:
         packet = OSPFv3_Hdr(raw_packet)
         if not isinstance(packet.payload, packet_class):
@@ -60,7 +66,7 @@ def _lsa_header_fields(header):
     }
 
 
-def _parse_lsa_header(raw_header, include_raw=False):
+def _parse_lsa_header(raw_header):
     if len(raw_header) != 20:
         raise ValueError("LSA header must contain exactly 20 bytes")
 
@@ -69,10 +75,7 @@ def _parse_lsa_header(raw_header, include_raw=False):
     except (Scapy_Exception, struct.error, IndexError, ValueError, TypeError) as exc:
         raise ValueError(f"invalid LSA header: {exc}") from exc
 
-    result = _lsa_header_fields(header)
-    if include_raw:
-        result["raw_header"] = bytes(raw_header)
-    return result
+    return {**_lsa_header_fields(header), "raw_header": bytes(raw_header)}
 
 
 def parse_hello(ospf_data, pkt_len):
@@ -80,7 +83,7 @@ def parse_hello(ospf_data, pkt_len):
     if (pkt_len - 36) % 4 != 0:
         raise ValueError(f"invalid neighbor-list length={pkt_len - 36}")
 
-    hello = _decode_packet(raw, pkt_len, 36, OSPFv3_Hello)
+    hello = _decode_packet(raw, OSPFv3_Hello)
     neighbors = list(hello.neighbors)
     if len(neighbors) != (pkt_len - 36) // 4:
         raise ValueError("Hello neighbor count does not match payload length")
@@ -103,7 +106,7 @@ def parse_dbd(ospf_data, pkt_len):
     if (pkt_len - 28) % 20 != 0:
         raise ValueError(f"invalid LSA-summary length={pkt_len - 28}")
 
-    dbd = _decode_packet(raw, pkt_len, 28, OSPFv3_DBDesc)
+    dbd = _decode_packet(raw, OSPFv3_DBDesc)
     # The field list is decoded by Scapy with the OSPF header as underlayer.
     lsa_headers = list(dbd.lsaheaders or ())
     if len(lsa_headers) != (pkt_len - 28) // 20:
@@ -128,7 +131,7 @@ def parse_lsr(ospf_data, pkt_len):
     if request_length <= 0 or request_length % 12 != 0:
         raise ValueError(f"invalid payload length={request_length}")
 
-    requests_packet = _decode_packet(raw, pkt_len, 28, OSPFv3_LSReq)
+    requests_packet = _decode_packet(raw, OSPFv3_LSReq)
     requests = list(requests_packet.requests or ())
     if len(requests) != request_length // 12:
         raise ValueError("LSR item count does not match payload length")
@@ -164,7 +167,7 @@ def parse_lsu(ospf_data, pkt_len):
             raise ValueError(f"insufficient data for LSA header #{index + 1}")
 
         raw_header = raw[offset:offset + 20]
-        lsa = _parse_lsa_header(raw_header, include_raw=True)
+        lsa = _parse_lsa_header(raw_header)
         ls_length = lsa["ls_length"]
         if ls_length < 20:
             raise ValueError(f"invalid LSA length #{index + 1}: {ls_length}")
@@ -186,27 +189,13 @@ def parse_lsu(ospf_data, pkt_len):
                 f"calculated=0x{expected_checksum:04x}"
             )
 
-        ls_type = lsa["ls_type"]
-
-        if ls_type == 0x2001:
+        body_parser = _LSA_BODY_PARSERS.get(lsa["ls_type"])
+        if body_parser is not None:
+            key, label, decode = body_parser
             try:
-                lsa["router_lsa"] = parse_ospfv3_router_lsa(raw_lsa)
+                lsa[key] = decode(raw_lsa)
             except ValueError as exc:
-                raise ValueError(f"Router-LSA parse error #{index + 1}: {exc}") from exc
-        elif ls_type == 0x0008:
-            try:
-                lsa["link_lsa"] = parse_ospfv3_link_lsa(raw_lsa)
-            except ValueError as exc:
-                raise ValueError(f"Link-LSA parse error #{index + 1}: {exc}") from exc
-        elif ls_type == 0x2009:
-            try:
-                lsa["intra_area_prefix_lsa"] = parse_ospfv3_intra_area_prefix_lsa(
-                    raw_lsa
-                )
-            except ValueError as exc:
-                raise ValueError(
-                    f"Intra-Area-Prefix-LSA parse error #{index + 1}: {exc}"
-                ) from exc
+                raise ValueError(f"{label} parse error #{index + 1}: {exc}") from exc
 
         lsa_headers.append(lsa)
         offset += ls_length
@@ -223,7 +212,7 @@ def parse_lsack(ospf_data, pkt_len):
     if ack_length <= 0 or ack_length % 20 != 0:
         raise ValueError(f"invalid payload length={ack_length}")
 
-    ack = _decode_packet(raw, pkt_len, 36, OSPFv3_LSAck)
+    ack = _decode_packet(raw, OSPFv3_LSAck)
     headers = list(ack.lsaheaders or ())
     if len(headers) != ack_length // 20:
         raise ValueError("LSAck header count does not match payload length")

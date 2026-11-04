@@ -24,23 +24,16 @@ class Neighbor:
 
     @staticmethod
     def _new_dbd_sequence():
-        return int(
-            time.time() * 1000
-        ) & 0xffffffff
+        return int(time.time() * 1000) & 0xffffffff
 
     def mark_hello_received(self):
         self.last_hello_received = time.monotonic()
 
     def dead_interval_expired(self, dead_interval):
-        if self.last_hello_received is None:
-            return False
-
-        elapsed = (
-            time.monotonic()
-            - self.last_hello_received
+        return (
+            self.last_hello_received is not None
+            and time.monotonic() - self.last_hello_received >= dead_interval
         )
-
-        return elapsed >= dead_interval
 
     def reset_exchange(self):
         old_sequence = self.dbd_sequence
@@ -54,9 +47,7 @@ class Neighbor:
         self.dbd_sequence = self._new_dbd_sequence()
 
         if self.dbd_sequence == old_sequence:
-            self.dbd_sequence = (
-                old_sequence + 1
-            ) & 0xffffffff
+            self.dbd_sequence = (old_sequence + 1) & 0xffffffff
 
     def update_request_list(self, received_lsas):
         if not self.request_list:
@@ -65,36 +56,20 @@ class Neighbor:
         remaining = []
 
         for request in self.request_list:
-            satisfied = False
-
             for received in received_lsas:
-                same_lsa = (
-                    request["ls_type"]
-                    == received["ls_type"]
-                    and request["link_state_id"]
-                    == received["link_state_id"]
-                    and request["advertising_router"]
-                    == received["advertising_router"]
-                )
-
-                if not same_lsa:
-                    continue
-
-                comparison = compare_lsa_instances(
-                    received,
-                    request
-                )
-
-                if comparison >= 0:
-                    satisfied = True
+                # Compare instances only when their three-field LSA identity matches.
+                if (
+                    request["ls_type"] == received["ls_type"]
+                    and request["link_state_id"] == received["link_state_id"]
+                    and request["advertising_router"] == received["advertising_router"]
+                    and compare_lsa_instances(received, request) >= 0
+                ):
                     break
-
-            if not satisfied:
+            else:
                 remaining.append(request)
 
         old_count = len(self.request_list)
         new_count = len(remaining)
-
         self.request_list = remaining
 
         if new_count != old_count:
@@ -104,7 +79,7 @@ class Neighbor:
                 new_count
             )
 
-        if old_count > 0 and new_count == 0:
+        if old_count and not new_count:
             self.logger.info(
                 "[OSPF][LSR] request-list complete"
             )

@@ -5,7 +5,6 @@ from b5_3_harness import (LAN_IP, LAN_MAC, TRANSIT_IP, TRANSIT_MAC,
 from test_dataplane_b5_3 import make_ndp
 
 class TestKnownIssues(unittest.TestCase):
-    @unittest.expectedFailure
     def test_tcp_first_packet_should_be_forwarded_when_route_known(self):
         ctl=make_controller(ready=False)
         ctl.data_plane.learn_transit_router(1,TRANSIT_IP,TRANSIT_MAC)
@@ -14,7 +13,6 @@ class TestKnownIssues(unittest.TestCase):
         self.assertTrue(any(m.kind=='packet_out' for m in ctl.datapath.sent),
                         'Expected PacketOut for first TCP packet; not sent')
 
-    @unittest.expectedFailure
     def test_udp_first_packet_should_be_forwarded_when_route_known(self):
         ctl=make_controller(ready=False)
         ctl.data_plane.learn_transit_router(1,TRANSIT_IP,TRANSIT_MAC)
@@ -23,7 +21,6 @@ class TestKnownIssues(unittest.TestCase):
         self.assertTrue(any(m.kind=='packet_out' for m in ctl.datapath.sent),
                         'Expected PacketOut for first UDP packet; not sent')
 
-    @unittest.expectedFailure
     def test_ndp_hop_limit_must_be_255(self):
         dp=DataPlane()
         pkt,eth,ip6,port=make_ndp()
@@ -31,7 +28,6 @@ class TestKnownIssues(unittest.TestCase):
         self.assertIsNone(dp.handle_ndp(pkt,eth,ip6,port),
                           'RFC 4861 7.1.1: NS hop-limit !=255 must be discarded')
 
-    @unittest.expectedFailure
     def test_ndp_icmp_code_must_be_zero(self):
         dp=DataPlane()
         pkt,eth,ip6,port=make_ndp()

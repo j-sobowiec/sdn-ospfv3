@@ -119,6 +119,11 @@ class DataPlane:
         ):
             return None
 
+        # RFC 4861, Section 7.1.1: reject invalid Neighbor Solicitations
+        # before learning any LAN/transit state or generating an NA.
+        if ipv6_pkt.hop_limit != 255 or icmp_pkt.code != 0:
+            return None
+
         target = icmp_pkt.data.dst
 
         if target not in (
@@ -196,14 +201,9 @@ class DataPlane:
             target_ipv6=target
         )
 
-    def build_neighbor_advertisement(
-        self,
-        destination_mac,
-        destination_ipv6,
-        target_ipv6
-    ):
+    @staticmethod
+    def _icmpv6_packet(destination_mac, source_ipv6, destination_ipv6, hop_limit):
         pkt = packet.Packet()
-
         pkt.add_protocol(
             ethernet.ethernet(
                 dst=destination_mac,
@@ -211,38 +211,40 @@ class DataPlane:
                 ethertype=ether_types.ETH_TYPE_IPV6
             )
         )
-
         pkt.add_protocol(
             ipv6.ipv6(
-                src=target_ipv6,
+                src=source_ipv6,
                 dst=destination_ipv6,
                 nxt=58,
-                hop_limit=255
+                hop_limit=hop_limit
             )
         )
+        return pkt
 
-        option = icmpv6.nd_option_tla(
-            hw_src=cfg.ROUTER_MAC
+    @staticmethod
+    def _serialize_icmpv6(pkt, type_, data):
+        pkt.add_protocol(
+            icmpv6.icmpv6(type_=type_, code=0, csum=0, data=data)
         )
+        pkt.serialize()
+        return bytes(pkt.data)
 
+    def build_neighbor_advertisement(
+        self,
+        destination_mac,
+        destination_ipv6,
+        target_ipv6
+    ):
+        pkt = self._icmpv6_packet(
+            destination_mac, target_ipv6, destination_ipv6, 255
+        )
+        option = icmpv6.nd_option_tla(hw_src=cfg.ROUTER_MAC)
         neighbor = icmpv6.nd_neighbor(
             res=0x7,
             dst=target_ipv6,
             option=option
         )
-
-        pkt.add_protocol(
-            icmpv6.icmpv6(
-                type_=icmpv6.ND_NEIGHBOR_ADVERT,
-                code=0,
-                csum=0,
-                data=neighbor
-            )
-        )
-
-        pkt.serialize()
-
-        return bytes(pkt.data)
+        return self._serialize_icmpv6(pkt, icmpv6.ND_NEIGHBOR_ADVERT, neighbor)
 
     def build_echo_reply(
         self,
@@ -250,44 +252,16 @@ class DataPlane:
         destination_ipv6,
         echo_data
     ):
-        pkt = packet.Packet()
-
-        pkt.add_protocol(
-            ethernet.ethernet(
-                dst=destination_mac,
-                src=cfg.ROUTER_MAC,
-                ethertype=ether_types.ETH_TYPE_IPV6
-            )
+        pkt = self._icmpv6_packet(
+            destination_mac, cfg.LAN_GATEWAY, destination_ipv6, 64
         )
-
-        pkt.add_protocol(
-            ipv6.ipv6(
-                src=cfg.LAN_GATEWAY,
-                dst=destination_ipv6,
-                nxt=58,
-                hop_limit=64
-            )
-        )
-
         reply_data = icmpv6.echo(
             id_=echo_data.id,
             seq=echo_data.seq,
             data=echo_data.data
         )
+        return self._serialize_icmpv6(pkt, 129, reply_data)
 
-        pkt.add_protocol(
-            icmpv6.icmpv6(
-                type_=129,
-                code=0,
-                csum=0,
-                data=reply_data
-            )
-        )
-
-        pkt.serialize()
-
-        return bytes(pkt.data)
-    
     def handle_echo_request(
         self,
         pkt,

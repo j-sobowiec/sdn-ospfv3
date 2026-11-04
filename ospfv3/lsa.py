@@ -1,10 +1,11 @@
-import socket
 import struct
+from ipaddress import IPv4Address, IPv6Interface
 
 from scapy.contrib.ospf import (
     OSPFv3_Intra_Area_Prefix_LSA,
     OSPFv3_Link_LSA,
     OSPFv3_Router_LSA,
+    ospf_lsa_checksum as _scapy_ospf_lsa_checksum,
 )
 
 from ospfv3 import config as cfg
@@ -62,25 +63,24 @@ def _check_lsa_header(raw_lsa, expected_type, min_length, name):
 
 def _check_prefixes(raw_lsa, count, start, name):
     """Validate on-wire entry boundaries before Scapy decodes the list."""
-    remaining = len(raw_lsa) - start
-    if count > remaining // 4:
+    end = len(raw_lsa)
+    if count > (end - start) // 4:
         raise ValueError(f"{name}: prefix count exceeds available data")
 
     offset = start
     for index in range(count):
-        if offset + 4 > len(raw_lsa):
+        if offset + 4 > end:
             raise ValueError(f"{name}: insufficient data for prefix #{index + 1}")
 
         prefix_length = raw_lsa[offset]
         if prefix_length > 128:
             raise ValueError(f"{name}: invalid prefix length {prefix_length}")
 
-        address_length = ((prefix_length + 31) // 32) * 4
-        offset += 4 + address_length
-        if offset > len(raw_lsa):
+        offset += 4 + ((prefix_length + 31) // 32) * 4
+        if offset > end:
             raise ValueError(f"{name}: prefix #{index + 1} exceeds LSA boundary")
 
-    if offset != len(raw_lsa):
+    if offset != end:
         raise ValueError(f"{name}: trailing bytes after prefix list")
 
 
@@ -89,20 +89,6 @@ def _decode_lsa(lsa_class, raw_lsa, name):
         return lsa_class(bytes(raw_lsa))
     except Exception as exc:
         raise ValueError(f"{name}: Scapy decode error: {exc}") from exc
-
-
-def _interface_id_text(value):
-    return socket.inet_ntoa(struct.pack("!I", value))
-
-
-def _ipv6_prefix_address(value):
-    # Scapy's IP6PrefixField can expose a CIDR string or (address, length).
-    if isinstance(value, tuple):
-        value = value[0]
-    address = str(value).split("/", 1)[0]
-    return socket.inet_ntop(
-        socket.AF_INET6, socket.inet_pton(socket.AF_INET6, address)
-    )
 
 
 def parse_ospfv3_router_lsa(raw_lsa):
@@ -128,12 +114,12 @@ def parse_ospfv3_router_lsa(raw_lsa):
 
     links = [
         {
-            "type": int(link.type),
-            "type_name": link_type_names.get(int(link.type), "Unknown"),
-            "reserved": int(link.reserved),
-            "metric": int(link.metric),
-            "interface_id": _interface_id_text(link.intid),
-            "neighbor_interface_id": _interface_id_text(link.neighintid),
+            "type": link.type,
+            "type_name": link_type_names.get(link.type, "Unknown"),
+            "reserved": link.reserved,
+            "metric": link.metric,
+            "interface_id": str(IPv4Address(link.intid)),
+            "neighbor_interface_id": str(IPv4Address(link.neighintid)),
             "neighbor_router_id": link.neighbor,
         }
         for link in lsa.linklist
@@ -159,20 +145,20 @@ def parse_ospfv3_link_lsa(raw_lsa):
 
     prefixes = [
         {
-            "prefix_length": int(item.prefixlen),
+            "prefix_length": item.prefixlen,
             "prefix_options": int(item.prefixoptions),
             # Scapy reuses the Prefix Item's metric field for this reserved word.
-            "reserved": int(item.metric),
-            "prefix": _ipv6_prefix_address(item.prefix),
+            "reserved": item.metric,
+            "prefix": str(IPv6Interface(item.prefix).ip),
         }
         for item in lsa.prefixlist
     ]
 
     return {
-        "router_priority": int(lsa.prio),
+        "router_priority": lsa.prio,
         "options": int(lsa.options),
         "link_local_address": lsa.lladdr,
-        "number_of_prefixes": int(lsa.prefixes),
+        "number_of_prefixes": lsa.prefixes,
         "prefixes": prefixes,
     }
 
@@ -190,17 +176,17 @@ def parse_ospfv3_intra_area_prefix_lsa(raw_lsa):
 
     prefixes = [
         {
-            "prefix": _ipv6_prefix_address(item.prefix),
-            "prefix_length": int(item.prefixlen),
+            "prefix": str(IPv6Interface(item.prefix).ip),
+            "prefix_length": item.prefixlen,
             "prefix_options": int(item.prefixoptions),
-            "metric": int(item.metric),
+            "metric": item.metric,
         }
         for item in lsa.prefixlist
     ]
 
     return {
-        "number_of_prefixes": int(lsa.prefixes),
-        "referenced_ls_type": int(lsa.reflstype),
+        "number_of_prefixes": lsa.prefixes,
+        "referenced_ls_type": lsa.reflstype,
         "referenced_link_state_id": lsa.reflsid,
         "referenced_advertising_router": lsa.refadrouter,
         "prefixes": prefixes,
@@ -217,107 +203,40 @@ def lsa_sequence_signed(sequence):
 
 
 def compare_lsa_instances(first, second):
+    """Compare signed sequence, checksum, MaxAge and LS Age, in that order.
+
+    Return 1 when first is newer, -1 when second is newer, otherwise 0.
     """
-    Porownuje dwie instancje tego samego LSA.
+    first_seq = lsa_sequence_signed(first["ls_sequence"])
+    second_seq = lsa_sequence_signed(second["ls_sequence"])
+    if first_seq != second_seq:
+        return 1 if first_seq > second_seq else -1
 
-    Zwraca:
-       1  -> first jest nowsze
-       0  -> obie instancje sa traktowane jako identyczne
-      -1  -> second jest nowsze
-    """
-
-    first_seq = lsa_sequence_signed(
-        first["ls_sequence"]
-    )
-
-    second_seq = lsa_sequence_signed(
-        second["ls_sequence"]
-    )
-
-    # 1. LS Sequence Number
-    if first_seq > second_seq:
-        return 1
-
-    if first_seq < second_seq:
-        return -1
-
-    # 2. LS Checksum
-    if first["ls_checksum"] > second["ls_checksum"]:
-        return 1
-
-    if first["ls_checksum"] < second["ls_checksum"]:
-        return -1
+    first_checksum = first["ls_checksum"]
+    second_checksum = second["ls_checksum"]
+    if first_checksum != second_checksum:
+        return 1 if first_checksum > second_checksum else -1
 
     first_age = first["ls_age"]
     second_age = second["ls_age"]
-
-    # 3. MaxAge
-    if (
-        first_age == cfg.MAX_AGE
-        and second_age != cfg.MAX_AGE
-    ):
+    if first_age == cfg.MAX_AGE and second_age != cfg.MAX_AGE:
         return 1
-
-    if (
-        second_age == cfg.MAX_AGE
-        and first_age != cfg.MAX_AGE
-    ):
+    if second_age == cfg.MAX_AGE and first_age != cfg.MAX_AGE:
         return -1
-
-    # 4. Duza roznica LS Age:
-    # mlodsze LSA (mniejsze age) jest nowsze.
     if abs(first_age - second_age) > cfg.MAX_AGE_DIFF:
-
-        if first_age < second_age:
-            return 1
-
-        if first_age > second_age:
-            return -1
-
-    # 5. W pozostalych przypadkach
-    # instancje sa traktowane jako identyczne.
+        return 1 if first_age < second_age else -1
     return 0
 
+
 def ospfv3_lsa_checksum(lsa_bytes):
-    """
-    Calculates the Fletcher checksum for an OSPFv3 LSA.
+    """Return the OSPFv3 LSA Fletcher checkbytes as a 16-bit integer.
 
-    The LS Age field is excluded from the checksum calculation.
-    The checksum field itself must be treated as zero.
+    Scapy excludes LS Age; its Fletcher checkbytes helper zeros bytes 16–17.
     """
-
     if len(lsa_bytes) < 20:
         raise ValueError("LSA is too short for checksum calculation")
+    return int.from_bytes(_scapy_ospf_lsa_checksum(bytes(lsa_bytes)), "big")
 
-    data = bytearray(lsa_bytes)
-
-    # LSA checksum field is located at bytes 16-17.
-    data[16] = 0
-    data[17] = 0
-
-    c0 = 0
-    c1 = 0
-
-    # LS Age occupies bytes 0-1 and is excluded.
-    for value in data[2:]:
-        c0 = (c0 + value) % 255
-        c1 = (c1 + c0) % 255
-
-    checksum_data_length = len(data) - 2
-
-    x = (
-        (checksum_data_length - 15) * c0 - c1
-    ) % 255
-
-    if x <= 0:
-        x += 255
-
-    y = 510 - c0 - x
-
-    if y > 255:
-        y -= 255
-
-    return (x << 8) | y
 
 def next_ospfv3_lsa_sequence(sequence):
     """
@@ -345,26 +264,9 @@ def next_ospfv3_lsa_sequence(sequence):
     return (sequence + 1) & 0xffffffff
 
 def finalize_ospfv3_lsa_checksum(lsa_bytes):
-    """
-    Inserts the calculated Fletcher checksum
-    into an OSPFv3 LSA.
-    """
-
+    """Return an LSA with its Fletcher checksum inserted (without mutating it)."""
     data = bytearray(lsa_bytes)
-
     if len(data) < 20:
         raise ValueError("LSA is too short")
-
-    data[16] = 0
-    data[17] = 0
-
-    checksum = ospfv3_lsa_checksum(data)
-
-    struct.pack_into(
-        "!H",
-        data,
-        16,
-        checksum
-    )
-
+    data[16:18] = ospfv3_lsa_checksum(data).to_bytes(2, "big")
     return bytes(data)

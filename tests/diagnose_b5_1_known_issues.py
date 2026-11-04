@@ -20,7 +20,6 @@ class TestObservedLimitations(unittest.TestCase):
         self.db = LSDB(logging.getLogger("ospfv3.b5_1.diagnostics"))
         self.routing = Routing(self.db)
 
-    @unittest.expectedFailure
     def test_unidirectional_router_edge_without_reverse_lsa_not_routable(self):
         # RFC 5340 section 4.8.1: transit vertices must be bidirectional.
         # R2 has no Router-LSA confirming R2->R1 connectivity.
@@ -31,7 +30,6 @@ class TestObservedLimitations(unittest.TestCase):
         self.assertNotIn(("2001:db8:77::", 64),
                          self.routing.build_ipv6_routing_table())
 
-    @unittest.expectedFailure
     def test_nu_bit_prefix_not_installed_as_unicast_route(self):
         # RFC 5340 section 4.8.1: NU-bit ('no-unicast') should be excluded.
         self.db.update([
@@ -43,7 +41,6 @@ class TestObservedLimitations(unittest.TestCase):
         self.assertNotIn(("2001:db8:88::", 64),
                          self.routing.build_ipv6_routing_table())
 
-    @unittest.expectedFailure
     def test_lsdb_nested_content_is_snapshot_at_installation(self):
         # Current LSDB._install uses dict(lsa), a shallow copy.
         original = router_lsa(R1, link(ROOT, 10))

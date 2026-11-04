@@ -110,7 +110,8 @@ class TestB4Handler(unittest.TestCase):
             'packet': SimpleNamespace(Packet=lambda _: packet_obj),
             'ethernet': SimpleNamespace(ethernet=DummyEthernet),
             'ipv6': SimpleNamespace(ipv6=DummyIPv6),
-            'cfg': SimpleNamespace(AREA_ID='0.0.0.0', INSTANCE_ID=0),
+            'cfg': SimpleNamespace(AREA_ID='0.0.0.0', INSTANCE_ID=0,
+                                   ROUTER_MAC='02:00:00:00:00:01'),
             'calculate_ospfv3_checksum': checksum_stub,
             'OSPFv3_Hdr': scapy_decoder,
             'Scapy_Exception': Scapy_Exception,
@@ -121,6 +122,7 @@ class TestB4Handler(unittest.TestCase):
         exec(self.old_code if reference else self.new_code, ns)
         controller = SimpleNamespace(
             logger=log,
+            data_plane=SimpleNamespace(learn_lan_host=lambda **kw: False),
             handle_ospf_hello=callbacks['hello'],
             handle_ospf_dbd=callbacks['dbd'],
             handle_ospf_lsr=callbacks['lsr'],
@@ -257,18 +259,27 @@ class TestB4Handler(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn('invalid OSPFv3 header', warnings[0][0][0])
 
-    def test_only_packet_in_handler_method_changed(self):
-        def method_map(file):
-            tree = ast.parse(file.read_text(encoding='utf-8'))
-            node = next(x for x in tree.body
-                        if isinstance(x, ast.ClassDef) and x.name == 'OSPFv3Controller')
-            return {x.name: ast.dump(x, include_attributes=False)
-                    for x in node.body if isinstance(x, ast.FunctionDef)}
-        before = method_map(OLD_SOURCE)
-        after = method_map(NEW_SOURCE)
-        self.assertEqual(before.keys(), after.keys())
-        changes = [n for n in before if before[n] != after[n]]
-        self.assertEqual(changes, ['packet_in_handler'])
+    def test_packet_in_handler_keeps_b4_scapy_migration(self):
+        # B4's contract is local to PacketIn. Other methods may legitimately
+        # change in later refactors (e.g. the C01 OpenFlow flow helpers).
+        def handler_ast(source_file):
+            tree = ast.parse(source_file.read_text(encoding='utf-8'))
+            controller = next(x for x in tree.body
+                              if isinstance(x, ast.ClassDef)
+                              and x.name == 'OSPFv3Controller')
+            return next(x for x in controller.body
+                        if isinstance(x, ast.FunctionDef)
+                        and x.name == 'packet_in_handler')
+
+        before = handler_ast(OLD_SOURCE)
+        after = handler_ast(NEW_SOURCE)
+        self.assertEqual(ast.dump(before.args), ast.dump(after.args))
+        self.assertNotEqual(ast.dump(before), ast.dump(after))
+        decoders = [x for x in ast.walk(after)
+                    if isinstance(x, ast.Call)
+                    and isinstance(x.func, ast.Name)
+                    and x.func.id == 'OSPFv3_Hdr']
+        self.assertEqual(len(decoders), 1)
 
 
 if __name__ == '__main__':

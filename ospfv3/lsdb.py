@@ -1,3 +1,4 @@
+import copy
 import time
 
 from ospfv3 import config as cfg
@@ -28,32 +29,17 @@ class LSDB:
         return self.entries.get(key)
 
     def _install(self, lsa):
-        entry = dict(lsa)
-
+        entry = copy.deepcopy(lsa)
         entry["_age_base"] = lsa["ls_age"]
         entry["_age_timestamp"] = time.monotonic()
-
         return entry
 
     def get_age(self, lsa):
-        base_age = lsa.get(
-            "_age_base",
-            lsa["ls_age"]
-        )
-
+        base_age = lsa.get("_age_base", lsa["ls_age"])
         timestamp = lsa.get("_age_timestamp")
-
         if timestamp is None:
             return base_age
-
-        elapsed = int(
-            time.monotonic() - timestamp
-        )
-
-        return min(
-            cfg.MAX_AGE,
-            base_age + elapsed
-        )
+        return min(cfg.MAX_AGE, base_age + int(time.monotonic() - timestamp))
 
     def update(self, received_lsas):
         """
@@ -65,88 +51,53 @@ class LSDB:
         routing_changed = False
 
         for received in received_lsas:
+            ls_type = received["ls_type"]
             key = (
-                received["ls_type"],
+                ls_type,
                 received["link_state_id"],
                 received["advertising_router"]
             )
-
             current = self.entries.get(key)
-
-            current_for_comparison = None
-
             if current is not None:
-                current_for_comparison = dict(current)
-                current_for_comparison["ls_age"] = self.get_age(current)
+                aged = dict(current)
+                aged["ls_age"] = self.get_age(current)
+            is_max_age = received["ls_age"] >= cfg.MAX_AGE
+            if current is not None:
+                comparison = compare_lsa_instances(received, aged)
 
-            if received["ls_age"] >= cfg.MAX_AGE:
-                if current_for_comparison is not None:
-                    comparison = compare_lsa_instances(
-                        received,
-                        current_for_comparison
+            if is_max_age:
+                if current is None or comparison < 0:
+                    continue
+                del self.entries[key]
+                message = "[OSPF][LSDB] flushed %s adv=%s lsid=%s"
+                extra = ()
+            else:
+                if current is not None and comparison <= 0:
+                    continue
+                if current is None:
+                    message = (
+                        "[OSPF][LSDB] installed %s "
+                        "adv=%s lsid=%s seq=0x%08x"
                     )
-
-                    if comparison >= 0:
-                        del self.entries[key]
-
-                        if received["ls_type"] in (0x2001, 0x2009):
-                            routing_changed = True
-
-                        self.logger.info(
-                            "[OSPF][LSDB] flushed %s adv=%s lsid=%s",
-                            ospfv3_lsa_type_description(
-                                received["ls_type"]
-                            ),
-                            received["advertising_router"],
-                            received["link_state_id"]
-                        )
-
-                continue
-
-            if current is None:
+                    extra = (received["ls_sequence"],)
+                else:
+                    message = (
+                        "[OSPF][LSDB] updated %s "
+                        "adv=%s lsid=%s "
+                        "seq=0x%08x -> 0x%08x"
+                    )
+                    extra = (current["ls_sequence"], received["ls_sequence"])
                 self.entries[key] = self._install(received)
 
-                if received["ls_type"] in (0x2001, 0x2009):
-                    routing_changed = True
-
-                self.logger.info(
-                    "[OSPF][LSDB] installed %s "
-                    "adv=%s lsid=%s seq=0x%08x",
-                    ospfv3_lsa_type_description(
-                        received["ls_type"]
-                    ),
-                    received["advertising_router"],
-                    received["link_state_id"],
-                    received["ls_sequence"]
-                )
-
-                continue
-
-            comparison = compare_lsa_instances(
-                received,
-                current_for_comparison
+            if ls_type in (0x2001, 0x2009):
+                routing_changed = True
+            self.logger.info(
+                message,
+                ospfv3_lsa_type_description(ls_type),
+                received["advertising_router"],
+                received["link_state_id"],
+                *extra
             )
-
-            if comparison > 0:
-                old_sequence = current["ls_sequence"]
-
-                self.entries[key] = self._install(received)
-
-                if received["ls_type"] in (0x2001, 0x2009):
-                    routing_changed = True
-
-                self.logger.info(
-                    "[OSPF][LSDB] updated %s "
-                    "adv=%s lsid=%s "
-                    "seq=0x%08x -> 0x%08x",
-                    ospfv3_lsa_type_description(
-                        received["ls_type"]
-                    ),
-                    received["advertising_router"],
-                    received["link_state_id"],
-                    old_sequence,
-                    received["ls_sequence"]
-                )
 
         return routing_changed
 
@@ -156,25 +107,20 @@ class LSDB:
 
         Returns True when the removal affects routing.
         """
-        expired_keys = []
+        expired_keys = [
+            key for key, lsa in self.entries.items()
+            if self.get_age(lsa) >= cfg.MAX_AGE
+        ]
         routing_changed = False
-
-        for key, lsa in self.entries.items():
-            if self.get_age(lsa) >= cfg.MAX_AGE:
-                expired_keys.append(key)
 
         for key in expired_keys:
             lsa = self.entries.pop(key)
-
             if lsa["ls_type"] in (0x2001, 0x2009):
                 routing_changed = True
-
             self.logger.info(
                 "[OSPF][LSDB] removed expired %s "
                 "adv=%s lsid=%s age=%ds",
-                ospfv3_lsa_type_description(
-                    lsa["ls_type"]
-                ),
+                ospfv3_lsa_type_description(lsa["ls_type"]),
                 lsa["advertising_router"],
                 lsa["link_state_id"],
                 cfg.MAX_AGE
@@ -184,11 +130,9 @@ class LSDB:
 
     def clear_remote(self, local_router_id):
         removed = 0
-
         for key, lsa in list(self.entries.items()):
             if lsa.get("advertising_router") == local_router_id:
                 continue
-
             del self.entries[key]
             removed += 1
 
@@ -197,5 +141,4 @@ class LSDB:
                 "[OSPF][LSDB] cleared remote entries=%d",
                 removed
             )
-
         return removed > 0
