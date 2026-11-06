@@ -1,8 +1,0 @@
-{
-  "branch": "uproszczenie-ospfv3",
-  "new_sha256": "7946609c90f31cf24016ceb8e7cbd42e80f8a9338612659f92ebf637fa85990d",
-  "old_sha256": "e17fe59322473bb93acd162b86f2a5ba207ae0a36f9a6f4c8906855cba93328a",
-  "pin": "e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d",
-  "stage": "04B-contract",
-  "status": "applied-awaiting-test-runner"
-}

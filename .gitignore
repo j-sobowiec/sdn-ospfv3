@@ -21,3 +21,5 @@ dist/
 # IDE / OS
 .vscode/
 .DS_Store
+
+/_migracja/
