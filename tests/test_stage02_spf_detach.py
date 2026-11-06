@@ -16,6 +16,8 @@ SOURCES = (
 STAGE01_OPENFLOW_SHA = (
     "be7c836a2154c574834bf0d299cb2c5890dbaebc8a93c97ee54ad5c180018ed3"
 )
+STAGE08B_OPENFLOW_SHA = "09c2499e6a3edccb017c9c7006afd9cd80bb5a1bf7adc304585a205f43ed0d4c"
+STAGE08B_CONTRACT_SHA = "c4e45dda919ec88b916aa4488b5b7921960e65cbe081dbd1d857a83cc31d4185"
 
 
 def methods(path, class_name):
@@ -101,9 +103,20 @@ class Stage02SPFContract(unittest.TestCase):
             self.assertIn(protocol, (ROOT / "ryu_sdn.py").read_text(encoding="utf8"))
 
     def test_openflow_source_identical_to_verified_stage01(self):
+        # Stage08B removes only two unused legacy deletion methods. Accept its
+        # exact payload only with a verified differential test and frozen copy.
+        expected = STAGE01_OPENFLOW_SHA
+        contract = ROOT / "tests/test_stage08b_openflow_cleanup.py"
+        if contract.is_file():
+            self.assertEqual(hashlib.sha256(contract.read_bytes()).hexdigest(),
+                             STAGE08B_CONTRACT_SHA)
+            old = ROOT / "tests/_stage08b_openflow_reference.py"
+            self.assertEqual(hashlib.sha256(old.read_bytes()).hexdigest(),
+                             STAGE01_OPENFLOW_SHA)
+            expected = STAGE08B_OPENFLOW_SHA
         self.assertEqual(
             hashlib.sha256((ROOT / "controller_openflow.py").read_bytes()).hexdigest(),
-            STAGE01_OPENFLOW_SHA
+            expected
         )
 
     def test_spf_module_removed_after_detachment(self):

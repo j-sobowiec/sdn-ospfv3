@@ -1,0 +1,23 @@
+{
+  "stage": "08B",
+  "unit_contract_pass": true,
+  "active": {
+    "ran": 451,
+    "passed": true,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "historical_preserved": {
+    "ran": 228,
+    "passed": false,
+    "failures": 72,
+    "errors": 48,
+    "skipped": 2
+  },
+  "new_stage08b_tests_discovered": true,
+  "exit_code": 0,
+  "integration": "NOT RUN: Containernet and real Ryu restart required",
+  "historical_failures_are_not_silently_ignored": true,
+  "approval": "PENDING REVIEW"
+}

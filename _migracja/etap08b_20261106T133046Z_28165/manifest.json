@@ -1,0 +1,31 @@
+{
+  "stage": "08B",
+  "status": "applied-awaiting-tests",
+  "utc": "2026-11-06T13:30:46.010927+00:00",
+  "git": {
+    "head": "aaab0c9a172e12b6542baa8b9b0e861179e4ced7",
+    "branch": "uproszczenie-ospfv3",
+    "dirty_reports_ignored": true
+  },
+  "old_sha256": {
+    "controller_openflow.py": "be7c836a2154c574834bf0d299cb2c5890dbaebc8a93c97ee54ad5c180018ed3",
+    "tests/test_stage02_spf_detach.py": "f18182ff55844eb1711c1156974bb5e9213d2bafc7df9bdcf8324363f4300e91",
+    "tests/test_stage04a_diagnostics_contract.py": "289dfb5a77673b77a5c81a5f811d53b71629928e06805aa092edd0d99ddaef1d"
+  },
+  "new_sha256": {
+    "controller_openflow.py": "09c2499e6a3edccb017c9c7006afd9cd80bb5a1bf7adc304585a205f43ed0d4c",
+    "tests/test_stage02_spf_detach.py": "96bb1d1ae70e7e97aa888c205730ce1edc2cf995240a0de0fb6100a42c420475",
+    "tests/test_stage04a_diagnostics_contract.py": "32d4cfc1f750e046788a8dd693a759d912be2aad8d18e35885a4566a54e2eef8",
+    "tests/test_stage08b_openflow_cleanup.py": "c4e45dda919ec88b916aa4488b5b7921960e65cbe081dbd1d857a83cc31d4185",
+    "tests/_stage08b_openflow_reference.py": "be7c836a2154c574834bf0d299cb2c5890dbaebc8a93c97ee54ad5c180018ed3",
+    "tests/_stage08b_stage02_reference.py": "f18182ff55844eb1711c1156974bb5e9213d2bafc7df9bdcf8324363f4300e91",
+    "tests/_stage08b_stage04a_reference.py": "289dfb5a77673b77a5c81a5f811d53b71629928e06805aa092edd0d99ddaef1d"
+  },
+  "changed_production": [
+    "controller_openflow.py"
+  ],
+  "production_lines_removed": 68,
+  "tests_pending": true,
+  "integration_pending": true,
+  "main_modified": false
+}

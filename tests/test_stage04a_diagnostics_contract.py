@@ -23,6 +23,8 @@ RX_04B_TEST_SHA = "0dab530d3eec94381a23902e1db53e851ce07c20d446d5b8d5d37a2a0fa39
 STAGE07_RYU_SHA = "08402606b119fee072c2bcfe39cd05242f804008cf9c1cb85ea9353753644538"
 STAGE07_TEST_SHA = "476a62ad777507b1c3f5efad9822dbfa41985d02ed0fcda30cdd1e09b3bf2750"
 STAGE07_REFERENCE_SHA = "8f9eaa95700bf07183b4e01088002144f0e9f51c5bc0176358744c451f09c4e5"
+STAGE08B_OPENFLOW_SHA = "09c2499e6a3edccb017c9c7006afd9cd80bb5a1bf7adc304585a205f43ed0d4c"
+STAGE08B_CONTRACT_SHA = "c4e45dda919ec88b916aa4488b5b7921960e65cbe081dbd1d857a83cc31d4185"
 
 
 def method_args(tree):
@@ -59,6 +61,7 @@ class Stage04AContract(unittest.TestCase):
         # and the pinned pre-Stage07 reference are both intact.
         stage07_contract = ROOT / "tests/test_stage07_event_contract.py"
         expected_ryu_sha = FROZEN_PRODUCTION["ryu_sdn.py"]
+        expected_openflow_sha = FROZEN_PRODUCTION["controller_openflow.py"]
         if stage07_contract.is_file():
             with self.subTest(file="tests/test_stage07_event_contract.py"):
                 self.assertEqual(hashlib.sha256(stage07_contract.read_bytes()).hexdigest(),
@@ -68,9 +71,21 @@ class Stage04AContract(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(reference.read_bytes()).hexdigest(),
                                  STAGE07_REFERENCE_SHA)
             expected_ryu_sha = STAGE07_RYU_SHA
+        stage08b_contract = ROOT / "tests/test_stage08b_openflow_cleanup.py"
+        if stage08b_contract.is_file():
+            with self.subTest(file="tests/test_stage08b_openflow_cleanup.py"):
+                self.assertEqual(hashlib.sha256(stage08b_contract.read_bytes()).hexdigest(),
+                                 STAGE08B_CONTRACT_SHA)
+            old = ROOT / "tests/_stage08b_openflow_reference.py"
+            with self.subTest(file="tests/_stage08b_openflow_reference.py"):
+                self.assertEqual(hashlib.sha256(old.read_bytes()).hexdigest(),
+                                 FROZEN_PRODUCTION["controller_openflow.py"])
+            expected_openflow_sha = STAGE08B_OPENFLOW_SHA
         for name, expected in FROZEN_PRODUCTION.items():
             if name == "ryu_sdn.py":
                 expected = expected_ryu_sha
+            if name == "controller_openflow.py":
+                expected = expected_openflow_sha
             with self.subTest(file=name):
                 self.assertEqual(
                     hashlib.sha256((ROOT / name).read_bytes()).hexdigest(),
