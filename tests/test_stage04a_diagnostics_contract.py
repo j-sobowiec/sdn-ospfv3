@@ -28,6 +28,10 @@ STAGE08B_CONTRACT_SHA = "c4e45dda919ec88b916aa4488b5b7921960e65cbe081dbd1d857a83
 STAGE08C_OPENFLOW_SHA = "5a45925519d6544a2044a8df9f2bb481feeae1f91ce8c5101221dc2955400014"
 STAGE08C_CONTRACT_SHA = "55fc4448e54a881d37b0e681d02f56cb1a6070d02e3fc4e0a4cd43344db135de"
 STAGE08C_UPDATED_08B_SHA = "d80e2ad9a4db77bbbaf5f34f4ac0567f11ca36291b6e24ce81477e39482f3e75"
+STAGE08F_RYU_SHA = "c7b7ecb6f9021728190cd59f2e62f5c0006c80d8a29e4bd67608048214a11dcd"
+STAGE08F_STAGE07_TEST_SHA = "ca36d0b030d1c0c079823a5e9fb47cb97aebe205d204aaa691ebbe165519e487"
+STAGE08F_CONTRACT_SHA = "4086b5529e8b15dcea7a0547fd48aa353445817c83ef00d02510534eeb6af24b"
+STAGE08F_ORIGINAL_04A_SHA = "a0a19d4673981290643b1b3895911a09a7b779fcce07ba334816af61d4f46966"
 
 
 def method_args(tree):
@@ -63,17 +67,30 @@ class Stage04AContract(unittest.TestCase):
         # precise new source ONLY when its executable differential contract
         # and the pinned pre-Stage07 reference are both intact.
         stage07_contract = ROOT / "tests/test_stage07_event_contract.py"
+        stage08f_contract = ROOT / "tests/test_stage08f_packetout_contract.py"
         expected_ryu_sha = FROZEN_PRODUCTION["ryu_sdn.py"]
         expected_openflow_sha = FROZEN_PRODUCTION["controller_openflow.py"]
         if stage07_contract.is_file():
             with self.subTest(file="tests/test_stage07_event_contract.py"):
                 self.assertEqual(hashlib.sha256(stage07_contract.read_bytes()).hexdigest(),
-                                 STAGE07_TEST_SHA)
+                                 (STAGE08F_STAGE07_TEST_SHA if stage08f_contract.is_file()
+                                  else STAGE07_TEST_SHA))
             with self.subTest(file="tests/_stage07_ryu_sdn_reference.py"):
                 reference = ROOT / "tests/_stage07_ryu_sdn_reference.py"
                 self.assertEqual(hashlib.sha256(reference.read_bytes()).hexdigest(),
                                  STAGE07_REFERENCE_SHA)
             expected_ryu_sha = STAGE07_RYU_SHA
+        if stage08f_contract.is_file():
+            for name, expected in (
+                ("tests/test_stage08f_packetout_contract.py", STAGE08F_CONTRACT_SHA),
+                ("tests/_stage08f_ryu_sdn_reference.py", STAGE07_RYU_SHA),
+                ("tests/_stage08f_stage07_contract_reference.py", STAGE07_TEST_SHA),
+                ("tests/_stage08f_stage04a_reference.py", STAGE08F_ORIGINAL_04A_SHA),
+            ):
+                with self.subTest(file=name):
+                    self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(),
+                                     expected)
+            expected_ryu_sha = STAGE08F_RYU_SHA
         stage08b_contract = ROOT / "tests/test_stage08b_openflow_cleanup.py"
         stage08c_contract = ROOT / "tests/test_stage08c_openflow_refactor.py"
         if stage08b_contract.is_file():

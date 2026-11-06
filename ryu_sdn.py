@@ -163,12 +163,9 @@ class OSPFv3Controller(OSPFDiagnosticsMixin, OSPFReceiveMixin,
                     datapath = msg.datapath
                     ofproto = datapath.ofproto
                     parser = datapath.ofproto_parser
-                    actions = [
-                        parser.OFPActionDecNwTtl(),
-                        parser.OFPActionSetField(eth_src=cfg.ROUTER_MAC),
-                        parser.OFPActionSetField(eth_dst=self.data_plane.transit_router_mac),
-                        parser.OFPActionOutput(self.data_plane.transit_port),
-                    ]
+                    actions = self._forwarding_actions(
+                        parser, self.data_plane.transit_router_mac,
+                        self.data_plane.transit_port)
                     packet_out = parser.OFPPacketOut(
                         datapath=datapath, buffer_id=ofproto.OFP_NO_BUFFER,
                         in_port=in_port, actions=actions, data=msg.data)

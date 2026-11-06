@@ -178,6 +178,16 @@ class Timers:
 class OpenFlow:
     _DATA_ICMPV6_TYPES = (1, 2, 3, 4, 128, 129)
 
+    @staticmethod
+    def _forwarding_actions(parser, destination_mac, out_port):
+        # Stub of the unchanged production OpenFlowMixin helper.
+        return [
+            parser.OFPActionDecNwTtl(),
+            parser.OFPActionSetField(eth_src=CFG.ROUTER_MAC),
+            parser.OFPActionSetField(eth_dst=destination_mac),
+            parser.OFPActionOutput(out_port),
+        ]
+
     def _send_action_flow(self, dp, match, priority, actions):
         self.events.append(("flow", normalize((match, priority, actions))))
 
