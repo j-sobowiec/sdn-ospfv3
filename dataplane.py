@@ -72,18 +72,12 @@ class DataPlane:
             return None
         if ipv6_pkt.src == "::":
             return None
-        source_ipv6 = ipaddress.IPv6Address(ipv6_pkt.src)
+        # Preserve validation for both LAN and transit solicitations.
+        ipaddress.IPv6Address(ipv6_pkt.src)
 
         if target == cfg.LAN_GATEWAY:
-            if source_ipv6 not in self.lan_network:
+            if not self.learn_lan_host(in_port, ipv6_pkt.src, eth_pkt.src):
                 return None
-            if self.transit_port is not None and in_port == self.transit_port:
-                return None
-            if self.lan_port is None:
-                self.lan_port = in_port
-            elif in_port != self.lan_port:
-                return None
-            self.lan_hosts[ipv6_pkt.src] = eth_pkt.src
         elif target == cfg.LINK_LOCAL:
             if self.transit_port is None or in_port != self.transit_port:
                 return None

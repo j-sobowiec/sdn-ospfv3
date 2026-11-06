@@ -43,17 +43,16 @@ class LocalLSA:
     def recover_sequences(self, lsa_headers, prepare_next):
         # A peer may retain newer self-originated LSAs after Ryu restarts.
         interface_lsid = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
+        sequences = {
+            (0x2001, "0.0.0.0"): "router_sequence",
+            (0x0008, interface_lsid): "link_sequence",
+            (0x2009, "0.0.0.0"): "prefix_sequence",
+        }
         changed, recovered = False, 0
         for lsa in lsa_headers:
             if lsa["advertising_router"] != cfg.ROUTER_ID:
                 continue
-            attribute = None
-            if lsa["ls_type"] == 0x2001 and lsa["link_state_id"] == "0.0.0.0":
-                attribute = "router_sequence"
-            elif lsa["ls_type"] == 0x0008 and lsa["link_state_id"] == interface_lsid:
-                attribute = "link_sequence"
-            elif lsa["ls_type"] == 0x2009 and lsa["link_state_id"] == "0.0.0.0":
-                attribute = "prefix_sequence"
+            attribute = sequences.get((lsa["ls_type"], lsa["link_state_id"]))
             if attribute is None:
                 continue
             observed = lsa["ls_sequence"]
@@ -81,21 +80,17 @@ class LocalLSA:
             return None
         local_id = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
         for lsa in self.lsdb.values():
-            if lsa["ls_type"] != 0x2001:
-                continue
-            if lsa["advertising_router"] != neighbor_router_id:
+            if (lsa["ls_type"] != 0x2001
+                    or lsa["advertising_router"] != neighbor_router_id):
                 continue
             router_lsa = lsa.get("router_lsa")
             if router_lsa is None:
                 continue
             for link in router_lsa["links"]:
-                if link["type"] != 1:
-                    continue
-                if link["neighbor_router_id"] != cfg.ROUTER_ID:
-                    continue
-                if link["neighbor_interface_id"] != local_id:
-                    continue
-                return struct.unpack("!I", socket.inet_aton(link["interface_id"]))[0]
+                if (link["type"] == 1
+                        and link["neighbor_router_id"] == cfg.ROUTER_ID
+                        and link["neighbor_interface_id"] == local_id):
+                    return struct.unpack("!I", socket.inet_aton(link["interface_id"]))[0]
         return None
 
     @staticmethod
