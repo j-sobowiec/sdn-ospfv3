@@ -1,0 +1,34 @@
+{
+  "stage": "08C",
+  "status": "applied-awaiting-tests",
+  "utc": "2026-11-06T14:11:44.161819+00:00",
+  "git": {
+    "head": "58add51ab9b18324cd039a81e09859f10aba0f8e",
+    "branch": "uproszczenie-ospfv3",
+    "dirty_reports_ignored": true
+  },
+  "old_sha256": {
+    "controller_openflow.py": "09c2499e6a3edccb017c9c7006afd9cd80bb5a1bf7adc304585a205f43ed0d4c",
+    "tests/test_stage08b_openflow_cleanup.py": "c4e45dda919ec88b916aa4488b5b7921960e65cbe081dbd1d857a83cc31d4185",
+    "tests/test_stage02_spf_detach.py": "96bb1d1ae70e7e97aa888c205730ce1edc2cf995240a0de0fb6100a42c420475",
+    "tests/test_stage04a_diagnostics_contract.py": "32d4cfc1f750e046788a8dd693a759d912be2aad8d18e35885a4566a54e2eef8"
+  },
+  "new_sha256": {
+    "controller_openflow.py": "5a45925519d6544a2044a8df9f2bb481feeae1f91ce8c5101221dc2955400014",
+    "tests/test_stage08b_openflow_cleanup.py": "d80e2ad9a4db77bbbaf5f34f4ac0567f11ca36291b6e24ce81477e39482f3e75",
+    "tests/test_stage02_spf_detach.py": "6fcfe18cf91171e9bedad8d76fdeb132a9e7eac7d057842e202753655221c549",
+    "tests/test_stage04a_diagnostics_contract.py": "a0a19d4673981290643b1b3895911a09a7b779fcce07ba334816af61d4f46966",
+    "tests/test_stage08c_openflow_refactor.py": "55fc4448e54a881d37b0e681d02f56cb1a6070d02e3fc4e0a4cd43344db135de",
+    "tests/_stage08c_openflow_reference.py": "09c2499e6a3edccb017c9c7006afd9cd80bb5a1bf7adc304585a205f43ed0d4c",
+    "tests/_stage08c_stage08b_contract_reference.py": "c4e45dda919ec88b916aa4488b5b7921960e65cbe081dbd1d857a83cc31d4185",
+    "tests/_stage08c_stage02_reference.py": "96bb1d1ae70e7e97aa888c205730ce1edc2cf995240a0de0fb6100a42c420475",
+    "tests/_stage08c_stage04a_reference.py": "32d4cfc1f750e046788a8dd693a759d912be2aad8d18e35885a4566a54e2eef8"
+  },
+  "changed_production": [
+    "controller_openflow.py"
+  ],
+  "production_lines_removed": 79,
+  "tests_pending": true,
+  "integration_pending": true,
+  "main_modified": false
+}

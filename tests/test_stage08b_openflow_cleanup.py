@@ -14,7 +14,11 @@ import b5_3_harness as h
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CURRENT = ROOT / "controller_openflow.py"
+# Stage08C keeps the exact post-08B source as a frozen historical milestone.
+# The current production module is checked by Stage08C's new differential test.
+CURRENT = (ROOT / "tests/_stage08c_openflow_reference.py"
+           if (ROOT / "tests/test_stage08c_openflow_refactor.py").is_file()
+           else ROOT / "controller_openflow.py")
 REFERENCE = ROOT / "tests/_stage08b_openflow_reference.py"
 OLD_SHA = "be7c836a2154c574834bf0d299cb2c5890dbaebc8a93c97ee54ad5c180018ed3"
 NEW_SHA = "09c2499e6a3edccb017c9c7006afd9cd80bb5a1bf7adc304585a205f43ed0d4c"

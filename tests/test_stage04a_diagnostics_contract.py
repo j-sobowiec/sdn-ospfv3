@@ -25,6 +25,9 @@ STAGE07_TEST_SHA = "476a62ad777507b1c3f5efad9822dbfa41985d02ed0fcda30cdd1e09b3bf
 STAGE07_REFERENCE_SHA = "8f9eaa95700bf07183b4e01088002144f0e9f51c5bc0176358744c451f09c4e5"
 STAGE08B_OPENFLOW_SHA = "09c2499e6a3edccb017c9c7006afd9cd80bb5a1bf7adc304585a205f43ed0d4c"
 STAGE08B_CONTRACT_SHA = "c4e45dda919ec88b916aa4488b5b7921960e65cbe081dbd1d857a83cc31d4185"
+STAGE08C_OPENFLOW_SHA = "5a45925519d6544a2044a8df9f2bb481feeae1f91ce8c5101221dc2955400014"
+STAGE08C_CONTRACT_SHA = "55fc4448e54a881d37b0e681d02f56cb1a6070d02e3fc4e0a4cd43344db135de"
+STAGE08C_UPDATED_08B_SHA = "d80e2ad9a4db77bbbaf5f34f4ac0567f11ca36291b6e24ce81477e39482f3e75"
 
 
 def method_args(tree):
@@ -72,15 +75,32 @@ class Stage04AContract(unittest.TestCase):
                                  STAGE07_REFERENCE_SHA)
             expected_ryu_sha = STAGE07_RYU_SHA
         stage08b_contract = ROOT / "tests/test_stage08b_openflow_cleanup.py"
+        stage08c_contract = ROOT / "tests/test_stage08c_openflow_refactor.py"
         if stage08b_contract.is_file():
             with self.subTest(file="tests/test_stage08b_openflow_cleanup.py"):
+                expected_08b_contract = (STAGE08C_UPDATED_08B_SHA
+                                         if stage08c_contract.is_file()
+                                         else STAGE08B_CONTRACT_SHA)
                 self.assertEqual(hashlib.sha256(stage08b_contract.read_bytes()).hexdigest(),
-                                 STAGE08B_CONTRACT_SHA)
+                                 expected_08b_contract)
             old = ROOT / "tests/_stage08b_openflow_reference.py"
             with self.subTest(file="tests/_stage08b_openflow_reference.py"):
                 self.assertEqual(hashlib.sha256(old.read_bytes()).hexdigest(),
                                  FROZEN_PRODUCTION["controller_openflow.py"])
             expected_openflow_sha = STAGE08B_OPENFLOW_SHA
+        if stage08c_contract.is_file():
+            with self.subTest(file="tests/test_stage08c_openflow_refactor.py"):
+                self.assertEqual(hashlib.sha256(stage08c_contract.read_bytes()).hexdigest(),
+                                 STAGE08C_CONTRACT_SHA)
+            with self.subTest(file="tests/_stage08c_openflow_reference.py"):
+                frozen = ROOT / "tests/_stage08c_openflow_reference.py"
+                self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(),
+                                 STAGE08B_OPENFLOW_SHA)
+            with self.subTest(file="tests/_stage08c_stage08b_contract_reference.py"):
+                frozen = ROOT / "tests/_stage08c_stage08b_contract_reference.py"
+                self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(),
+                                 STAGE08B_CONTRACT_SHA)
+            expected_openflow_sha = STAGE08C_OPENFLOW_SHA
         for name, expected in FROZEN_PRODUCTION.items():
             if name == "ryu_sdn.py":
                 expected = expected_ryu_sha

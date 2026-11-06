@@ -1,0 +1,28 @@
+{
+  "stage": "08C",
+  "phase": "after_restart",
+  "checks": {
+    "Ryu-R1 Full": {
+      "passed": false,
+      "detail": ""
+    },
+    "FRRouting advertises LAN": {
+      "passed": false,
+      "detail": ""
+    },
+    "R1 FIB via Ryu": {
+      "passed": false,
+      "detail": ""
+    },
+    "probe exception": {
+      "passed": false,
+      "detail": "RuntimeError('Cannot inspect OVS flow table: ovs-ofctl: s1 is not a bridge or a socket\\n')"
+    }
+  },
+  "stability": {
+    "executed": false
+  },
+  "automated_fault_injection": false,
+  "status": "NOT APPROVED; review before next stage",
+  "passed": false
+}
