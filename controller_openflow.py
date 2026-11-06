@@ -15,6 +15,11 @@ from ospfv3 import config as cfg
 class OpenFlowMixin:
     """Program IPv6 host routes and send OpenFlow PacketOut/FlowMod."""
 
+    # IPv6 global-unicast scope. OSPFv3 multicast/link-local and NDP
+    # are intentionally outside the forwarding contract.
+    _DATA_GLOBAL_PREFIX = ("2000::", "e000::")
+    _DATA_ICMPV6_TYPES = (1, 2, 3, 4, 128, 129)
+
     def _send_action_flow(self, datapath, match, priority, actions):
         """Send a FlowMod with the existing APPLY_ACTIONS instruction."""
         parser = datapath.ofproto_parser
@@ -109,7 +114,6 @@ class OpenFlowMixin:
         host_ipv6,
         host_mac
     ):
-
         datapath = self.datapath
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -118,25 +122,11 @@ class OpenFlowMixin:
         transit_port = self.data_plane.transit_port
         transit_mac = self.data_plane.transit_router_mac
 
-        ospf_routes = self.get_ospf_transit_routes()
-
-        route_signature = tuple(
-            sorted(
-                (
-                    route["prefix"],
-                    route["prefix_length"],
-                    route["next_hop"]
-                )
-                for route in ospf_routes
-            )
-        )
-
         state = (
             host_mac,
             lan_port,
             transit_mac,
-            transit_port,
-            route_signature
+            transit_port
         )
 
         previous_state = (
@@ -149,37 +139,9 @@ class OpenFlowMixin:
             return False
 
         if previous_state is not None:
-            previous_lan_port = previous_state[1]
-            previous_route_signature = set(
-                previous_state[4]
+            self._delete_host_protocol_flows(
+                host_ipv6, previous_state
             )
-
-            current_route_signature = set(
-                route_signature
-            )
-
-            withdrawn_routes = (
-                previous_route_signature
-                - current_route_signature
-            )
-
-            for (
-                prefix,
-                prefix_length,
-                next_hop
-            ) in withdrawn_routes:
-                self.delete_ipv6_route_flow(
-                    host_ipv6=host_ipv6,
-                    prefix=prefix,
-                    prefix_length=prefix_length,
-                    lan_port=previous_lan_port
-                )
-
-        if (
-            self.installed_ipv6_host_flows.get(host_ipv6)
-            == state
-        ):
-            return False
 
         #
         # Local logical gateway:
@@ -201,70 +163,57 @@ class OpenFlowMixin:
 
         self._send_action_flow(datapath, match, 200, actions)
 
-        for route in ospf_routes:
-            network = ipaddress.IPv6Network(
-                f'{route["prefix"]}/{route["prefix_length"]}',
-                strict=False
+        # 2000::/3 also includes the local LAN! A more-specific punt
+        # prevents the generic R1 rule from swallowing LAN-destined IP.
+        lan_network = ipaddress.IPv6Network(
+            f"{cfg.LAN_PREFIX}/{cfg.LAN_PREFIX_LEN}", strict=False
+        )
+        lan_match = parser.OFPMatch(
+            in_port=lan_port,
+            eth_type=ether_types.ETH_TYPE_IPV6,
+            eth_dst=cfg.ROUTER_MAC,
+            ipv6_dst=(
+                str(lan_network.network_address),
+                str(lan_network.netmask)
             )
+        )
+        self._send_action_flow(datapath, lan_match, 190, actions)
 
-            match = parser.OFPMatch(
-                in_port=lan_port,
-                eth_type=ether_types.ETH_TYPE_IPV6,
-                eth_dst=cfg.ROUTER_MAC,
-                ipv6_src=host_ipv6,
-                ipv6_dst=(
-                    str(network.network_address),
-                    str(network.netmask)
-                )
-            )
+        forward_actions = [
+            parser.OFPActionDecNwTtl(),
+            parser.OFPActionSetField(eth_src=cfg.ROUTER_MAC),
+            parser.OFPActionSetField(eth_dst=transit_mac),
+            parser.OFPActionOutput(transit_port)
+        ]
 
-            actions = [
-                parser.OFPActionDecNwTtl(),
-                parser.OFPActionSetField(
-                    eth_src=cfg.ROUTER_MAC
-                ),
-                parser.OFPActionSetField(
-                    eth_dst=transit_mac
-                ),
-                parser.OFPActionOutput(
-                    transit_port
-                )
-            ]
-
-            self._send_action_flow(datapath, match, 110, actions)
-
-            self.logger.info(
-                "[DATA][ROUTE FLOW INSTALL] "
-                "host=%s dst=%s/%d via=%s",
-                host_ipv6,
-                route["prefix"],
-                route["prefix_length"],
-                route["next_hop"]
-            )
+        # No route-prefix dependency: R1/FRRouting performs the IPv6
+        # destination lookup after OVS forwards the data-plane packet.
+        forward_base = dict(
+            in_port=lan_port,
+            eth_type=ether_types.ETH_TYPE_IPV6,
+            eth_dst=cfg.ROUTER_MAC,
+            ipv6_src=host_ipv6,
+            ipv6_dst=self._DATA_GLOBAL_PREFIX
+        )
+        for match in self._data_protocol_matches(parser, forward_base):
+            self._send_action_flow(datapath, match, 110, forward_actions)
 
         #
         # R1 -> LAN host
         #
-        match = parser.OFPMatch(
+        reverse_actions = [
+            parser.OFPActionDecNwTtl(),
+            parser.OFPActionSetField(eth_src=cfg.ROUTER_MAC),
+            parser.OFPActionSetField(eth_dst=host_mac),
+            parser.OFPActionOutput(lan_port)
+        ]
+        reverse_base = dict(
             in_port=transit_port,
-            eth_type=0x86dd,
+            eth_type=ether_types.ETH_TYPE_IPV6,
             ipv6_dst=host_ipv6
         )
-
-        actions = [
-            parser.OFPActionDecNwTtl(),
-            parser.OFPActionSetField(
-                eth_src=cfg.ROUTER_MAC
-            ),
-            parser.OFPActionSetField(
-                eth_dst=host_mac
-            ),
-            parser.OFPActionOutput(
-                lan_port
-            )
-        ]
-
-        self._send_action_flow(datapath, match, 100, actions)
+        for match in self._data_protocol_matches(parser, reverse_base):
+            self._send_action_flow(datapath, match, 100, reverse_actions)
 
         self.installed_ipv6_host_flows[
             host_ipv6
@@ -281,6 +230,47 @@ class OpenFlowMixin:
         )
 
         return True
+
+    def _data_protocol_matches(self, parser, base):
+        """Keep ND (ICMPv6 133-137) and OSPFv3 (89) off the fast path."""
+        for protocol in (6, 17):
+            yield parser.OFPMatch(**dict(base, ip_proto=protocol))
+        for icmp_type in self._DATA_ICMPV6_TYPES:
+            yield parser.OFPMatch(
+                **dict(base, ip_proto=58, icmpv6_type=icmp_type)
+            )
+
+    def _delete_host_protocol_flows(self, host_ipv6, state):
+        if self.datapath is None:
+            return
+
+        _host_mac, lan_port, _transit_mac, transit_port = state
+        datapath = self.datapath
+        parser = datapath.ofproto_parser
+        forward_base = dict(
+            in_port=lan_port,
+            eth_type=ether_types.ETH_TYPE_IPV6,
+            eth_dst=cfg.ROUTER_MAC,
+            ipv6_src=host_ipv6,
+            ipv6_dst=self._DATA_GLOBAL_PREFIX
+        )
+        reverse_base = dict(
+            in_port=transit_port,
+            eth_type=ether_types.ETH_TYPE_IPV6,
+            ipv6_dst=host_ipv6
+        )
+        for match in self._data_protocol_matches(parser, forward_base):
+            self._send_strict_delete(datapath, match, 110)
+        for match in self._data_protocol_matches(parser, reverse_base):
+            self._send_strict_delete(datapath, match, 100)
+
+    def withdraw_all_ipv6_host_flows(self):
+        """Fail closed after R1 adjacency loss, without touching OSPF/LSDB."""
+        for host_ipv6, state in list(
+            self.installed_ipv6_host_flows.items()
+        ):
+            self._delete_host_protocol_flows(host_ipv6, state)
+        self.installed_ipv6_host_flows.clear()
 
 
     def delete_ipv6_route_flow(

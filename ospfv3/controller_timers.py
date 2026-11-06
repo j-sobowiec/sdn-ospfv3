@@ -46,22 +46,9 @@ class OSPFTimerMixin:
                     cfg.ROUTER_ID
                 )
 
-                # Rebuild routing before clearing transit data.
-                # This also removes stale route-derived
-                # OpenFlow entries.
-                self.recompute_routing_state()
-
-                dead_transit_port = (
-                    self.data_plane.transit_port
-                )
-
-                for host_ipv6 in list(
-                    self.data_plane.lan_hosts
-                ):
-                    self.delete_ipv6_reverse_flow(
-                        host_ipv6,
-                        dead_transit_port
-                    )
+                # R1 itself disappeared: remove both directions, including
+                # global-unicast egress rules, before resetting its MAC/port.
+                self.withdraw_all_ipv6_host_flows()
 
                 # The OSPF next-hop is no longer valid.
                 self.data_plane.reset_transit()
@@ -84,9 +71,8 @@ class OSPFTimerMixin:
             hub.sleep(5)
             if self.lsdb and self.lsdb.purge_expired():
                 self.logger.info(
-                    "[OSPF][ROUTING] LSDB expiration triggered SPF"
+                    "[OSPF][LSDB] expired remote records removed"
                 )
-                self.recompute_routing_state()
 
     def local_lsa_retransmission_loop(self):
         """
