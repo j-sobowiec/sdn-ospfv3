@@ -1,0 +1,32 @@
+{
+  "stage": "02",
+  "meaning": "local-unit-only; network validation and Ryu restart pending",
+  "active": {
+    "ran": 473,
+    "passed": true,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "historical_unchanged": {
+    "ran": 187,
+    "passed": false,
+    "failures": 53,
+    "errors": 8,
+    "skipped": 0
+  },
+  "historical_files": [
+    "test_c01_openflow_equivalence",
+    "test_c03_packet_in_equivalence",
+    "test_c05_ospf_rx_equivalence",
+    "test_c06_recovery_equivalence",
+    "test_c07_logging_equivalence",
+    "test_m01_diagnostics_architecture",
+    "test_m03_openflow_architecture",
+    "test_m04_rx_architecture",
+    "test_m05_tx_timers_architecture",
+    "test_openflow_b5_3",
+    "test_w02d_first_packet_forwarding"
+  ],
+  "historical_failures_are_reported_not_suppressed": true
+}

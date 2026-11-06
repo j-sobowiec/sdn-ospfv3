@@ -1,0 +1,237 @@
+{
+  "timestamp": "2026-11-05T19:44:35.205040+00:00",
+  "stage": "08A",
+  "git": {
+    "worktree": "/home/jan/Inzynierka_uproszczony",
+    "branch": "uproszczenie-ospfv3",
+    "head": "e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d",
+    "expected_branch": true,
+    "baseline_head": true,
+    "status_lines": [
+      "M controller_openflow.py",
+      " M dataplane.py",
+      " M ospfv3/controller_diagnostics.py",
+      " M ospfv3/controller_rx.py",
+      " M ospfv3/controller_timers.py",
+      " M ospfv3/controller_tx.py",
+      " M ospfv3/local_lsa.py",
+      " M ospfv3/lsa.py",
+      " M ospfv3/lsdb.py",
+      " M ospfv3/neighbor.py",
+      " M ospfv3/packet.py",
+      " M ospfv3/parser.py",
+      " D ospfv3/routing.py",
+      " M ryu_sdn.py",
+      "?? _migracja/",
+      "?? tests/_stage04c_dataplane_reference.py",
+      "?? tests/_stage04c_tx_reference.py",
+      "?? tests/_stage05_local_lsa_reference.py",
+      "?? tests/_stage05_lsa_reference.py",
+      "?? tests/_stage06_lsdb_reference.py",
+      "?? tests/_stage06_neighbor_reference.py",
+      "?? tests/_stage06_packet_reference.py",
+      "?? tests/_stage06_parser_reference.py",
+      "?? tests/_stage07_ryu_sdn_reference.py",
+      "?? tests/_stage07_stage04a_reference.py",
+      "?? tests/test_stage01_openflow_contract.py",
+      "?? tests/test_stage02_spf_detach.py",
+      "?? tests/test_stage03_no_spf_runtime.py",
+      "?? tests/test_stage04a_diagnostics_contract.py",
+      "?? tests/test_stage04b_rx_contract.py",
+      "?? tests/test_stage04c_io_contract.py",
+      "?? tests/test_stage05_lsa_contract.py",
+      "?? tests/test_stage06_protocol_contract.py",
+      "?? tests/test_stage07_event_contract.py"
+    ],
+    "worktrees": "worktree /home/jan/Inzynierka\nHEAD e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d\nbranch refs/heads/main\n\nworktree /home/jan/Inzynierka_uproszczony\nHEAD e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d\nbranch refs/heads/uproszczenie-ospfv3"
+  },
+  "lines": {
+    "production_current": 3061,
+    "production_baseline": 5070,
+    "production_files": 20,
+    "baseline_meta": {
+      "available": true,
+      "production_files": 21
+    }
+  },
+  "source_files_exported": 103,
+  "source_files_excluded": [],
+  "testy": {
+    "executed": true,
+    "exit_code": 0,
+    "active": {
+      "ran": 446,
+      "passed": true,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "historical": {
+      "ran": 228,
+      "passed": false,
+      "failures": 67,
+      "errors": 43,
+      "skipped": 2
+    },
+    "historical_classification": {
+      "test_c01_openflow_equivalence": {
+        "failures": 13,
+        "errors": 1,
+        "examples": [
+          "test_real_ryu_openflow13_bytes_if_available",
+          "test_all_parser_constructor_events_and_send_order",
+          "test_constructor_trace_action_and_strict_delete",
+          "test_features_reset_with_recompute"
+        ]
+      },
+      "test_c03_packet_in_equivalence": {
+        "failures": 5,
+        "errors": 0,
+        "examples": [
+          "test_deterministic_random_packet_in",
+          "test_empty_and_non_ospf_ipv6",
+          "test_first_icmpv6_packet_forwarding",
+          "test_route_preference_longest_prefix"
+        ]
+      },
+      "test_c05_ospf_rx_equivalence": {
+        "failures": 5,
+        "errors": 0,
+        "examples": [
+          "test_lsack_match_and_pending_clear",
+          "test_lsack_short_and_malformed",
+          "test_lsr_empty_duplicates_missing_and_bad_values",
+          "test_lsu_empty_and_remote_update"
+        ]
+      },
+      "test_c06_recovery_equivalence": {
+        "failures": 4,
+        "errors": 0,
+        "examples": [
+          "test_lsdb_aging_dynamic_truth_and_purge",
+          "test_lsdb_aging_no_change_and_change",
+          "test_lsdb_aging_recompute_failure",
+          "test_randomized_aging_retx_refresh"
+        ]
+      },
+      "test_m01_diagnostics_architecture": {
+        "failures": 7,
+        "errors": 2,
+        "examples": [
+          "test_exact_public_signatures_and_docstrings",
+          "test_real_import_and_mro_if_ryu_present",
+          "test_all_five_method_bodies_unchanged",
+          "test_dbd_every_flags_combo"
+        ]
+      },
+      "test_m03_openflow_architecture": {
+        "failures": 4,
+        "errors": 0,
+        "examples": [
+          "test_01_seven_methods_moved_exact_ast",
+          "test_08_install_host_routes_and_cache",
+          "test_09_withdrawn_routes_strict_delete_order",
+          "test_13_randomized_host_route_wires"
+        ]
+      },
+      "test_m04_rx_architecture": {
+        "failures": 7,
+        "errors": 0,
+        "examples": [
+          "test_01_all_eight_methods_identical_ast",
+          "test_02_signatures_and_documentation",
+          "test_07_resync_one_way_hello_preserved",
+          "test_08_hello_needs_no_duplicate_hello_when_known"
+        ]
+      },
+      "test_m05_tx_timers_architecture": {
+        "failures": 6,
+        "errors": 0,
+        "examples": [
+          "test_01_exactly_18_moved_methods_ast_identical",
+          "test_03_no_transport_methods_remain_in_app",
+          "test_06_public_signatures_docs_and_mro",
+          "test_12_periodic_timer_traces"
+        ]
+      },
+      "test_openflow_b5_3": {
+        "failures": 10,
+        "errors": 3,
+        "examples": [
+          "test_changed_host_mac_reinstalls",
+          "test_changed_transit_mac_reinstalls",
+          "test_state_signature_recorded",
+          "test_changed_route_next_hop_triggers_reinstall"
+        ]
+      },
+      "test_w02b_lsdb_snapshot": {
+        "failures": 1,
+        "errors": 0,
+        "examples": [
+          "test_01_only_install_ast_changed"
+        ]
+      },
+      "test_w02c_spf_validation": {
+        "failures": 0,
+        "errors": 32,
+        "examples": [
+          "test_01_only_two_routing_methods_changed",
+          "test_02_frozen_reference_retains_both_known_defects",
+          "test_03_oneway_remote_edge_is_not_traversable",
+          "test_04_reciprocal_remote_edge_is_restored"
+        ]
+      },
+      "test_w02d_first_packet_forwarding": {
+        "failures": 5,
+        "errors": 1,
+        "examples": [
+          "test_05_raw_first_packet_data_not_mutated",
+          "test_01_exact_moved_forwarding_branch_and_other_methods_unchanged",
+          "test_09_unknown_route_does_not_forward",
+          "test_14_longest_prefix_match_kept"
+        ]
+      },
+      "unittest": {
+        "failures": 0,
+        "errors": 4,
+        "examples": [
+          "test_c07_logging_equivalence",
+          "test_d03_lsdb_equivalence",
+          "test_d05_routing_equivalence",
+          "test_lsdb_spf_b5_1"
+        ]
+      }
+    },
+    "historical_files_expected": [
+      "test_c01_openflow_equivalence",
+      "test_c03_packet_in_equivalence",
+      "test_c05_ospf_rx_equivalence",
+      "test_c06_recovery_equivalence",
+      "test_c07_logging_equivalence",
+      "test_d03_lsdb_equivalence",
+      "test_d05_routing_equivalence",
+      "test_lsdb_spf_b5_1",
+      "test_m01_diagnostics_architecture",
+      "test_m03_openflow_architecture",
+      "test_m04_rx_architecture",
+      "test_m05_tx_timers_architecture",
+      "test_openflow_b5_3",
+      "test_w02b_lsdb_snapshot",
+      "test_w02c_spf_validation",
+      "test_w02d_first_packet_forwarding"
+    ],
+    "note": "Historyczne błędy wymagają ręcznej klasyfikacji; nie uznano ich za poprawne."
+  },
+  "live_integration": {
+    "executed_by_this_script": false,
+    "previous_reports_collected": [
+      {
+        "original": "/home/jan/Inzynierka_uproszczony/_migracja/etap07_live_after_restart_20261105T191944Z/WYNIKI_LIVE_ETAP07.json",
+        "passed": true,
+        "phase": "after_restart",
+        "stage": "07"
+      }
+    ]
+  },
+  "source_code_changed": false
+}

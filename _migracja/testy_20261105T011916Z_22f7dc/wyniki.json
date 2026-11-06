@@ -1,0 +1,37 @@
+{
+  "project": "/home/jan/Inzynierka_uproszczony",
+  "results": [
+    {
+      "name": "regresja",
+      "exit_code": 0,
+      "command": [
+        "/home/jan/ryu-env/bin/python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_*.py",
+        "-q"
+      ],
+      "log": "regresja.log"
+    },
+    {
+      "name": "diagnostyka",
+      "exit_code": 0,
+      "command": [
+        "/home/jan/ryu-env/bin/python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "diagnose_*.py",
+        "-q"
+      ],
+      "log": "diagnostyka.log"
+    }
+  ]
+}

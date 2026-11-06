@@ -1,0 +1,12 @@
+{
+  "branch": "uproszczenie-ospfv3",
+  "git_status_after": " M controller_openflow.py\n M ospfv3/controller_diagnostics.py\n M ospfv3/controller_rx.py\n M ospfv3/controller_timers.py\n D ospfv3/routing.py\n M ryu_sdn.py\n?? _migracja/\n?? tests/test_stage01_openflow_contract.py\n?? tests/test_stage02_spf_detach.py\n?? tests/test_stage03_no_spf_runtime.py\n?? tests/test_stage04a_diagnostics_contract.py",
+  "git_status_before": " M controller_openflow.py\n M ospfv3/controller_diagnostics.py\n M ospfv3/controller_rx.py\n M ospfv3/controller_timers.py\n D ospfv3/routing.py\n M ryu_sdn.py\n?? _migracja/\n?? tests/test_stage01_openflow_contract.py\n?? tests/test_stage02_spf_detach.py\n?? tests/test_stage03_no_spf_runtime.py",
+  "new_sha256": "8e2a9f590570bb29848e8ddd7089cbbe8f10e9ac3bcf2736e6b076efeead2102",
+  "new_test_sha256": "e17fe59322473bb93acd162b86f2a5ba207ae0a36f9a6f4c8906855cba93328a",
+  "old_sha256": "4ce6cc00f509aacaae842ad94cc492a5d41161945c2404bac54509a7b2ecaee7",
+  "pin": "e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d",
+  "reduced_production_lines": 173,
+  "stage": "04A",
+  "status": "applied-awaiting-integration"
+}

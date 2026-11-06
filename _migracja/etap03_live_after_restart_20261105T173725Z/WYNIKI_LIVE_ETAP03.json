@@ -1,0 +1,94 @@
+{
+  "phase": "after_restart",
+  "stage": "03",
+  "status": "awaiting-review",
+  "checks": {
+    "Ryu-R1 OSPFv3 Full": {
+      "pass": true,
+      "details": "\u001b[?2004l\rNeighbor ID     Pri    DeadTime    State/IfState         Duration I/F[State]\r\n2.2.2.2           1    00:00:32     Full/PointToPoint    00:00:00 r1-eth0[PointToPoint]\r\n3.3.3.3           1    00:00:34     Full/PointToPoint    00:00:00 r1-eth1[PointToPoint]\r\n10.10.10.10       1    00:00:31     Full/PointToPoint    00:00:10 r1-eth2[PointToPoint]\r\n\u001b[?2004h"
+    },
+    "FRRouting advertises LAN 2001:db8:1::/64": {
+      "pass": true,
+      "details": "\u001b[?2004l\r*N IA 2001:db8:1::/64                fe80::10                  r1-eth2 00:00:00\r\n*N IA 2001:db8:10::/64               ::                        r1-eth2 00:00:00\r\n*N IA 2001:db8:12::/64               ::                        r1-eth0 00:00:00\r\n*N IA 2001:db8:31::/64               ::                        r1-eth1 00:00:00\r\n\u001b[?2004h"
+    },
+    "R1 IPv6 FIB route via Ryu fe80::10": {
+      "pass": true,
+      "details": "\u001b[?2004l\r2001:db8:1::/64 nhid 30 via fe80::10 dev r1-eth2 proto ospf metric 20 pref medium\r\n\u001b[?2004h"
+    },
+    "H1 -> logical gateway": {
+      "pass": true,
+      "details": "PING 2001:db8:1::1 (2001:db8:1::1) 56 data bytes\r\n64 bytes from 2001:db8:1::1: icmp_seq=1 ttl=64 time=11.7 ms\r\n64 bytes from 2001:db8:1::1: icmp_seq=2 ttl=64 time=2.35 ms\r\n64 bytes from 2001:db8:1::1: icmp_seq=3 ttl=64 time=2.43 ms\r\n\r\n--- 2001:db8:1::1 ping statistics ---\r\n3 packets transmitted, 3 received, 0% packet loss, time 2004ms\r\nrtt min/avg/max/mdev = 2.354/5.489/11.685/4.380 ms\r\n"
+    },
+    "H1 -> R3": {
+      "pass": true,
+      "details": "PING 2001:db8:23::3 (2001:db8:23::3) 56 data bytes\r\n64 bytes from 2001:db8:23::3: icmp_seq=4 ttl=62 time=2.76 ms\r\n64 bytes from 2001:db8:23::3: icmp_seq=5 ttl=62 time=0.191 ms\r\n\r\n--- 2001:db8:23::3 ping statistics ---\r\n5 packets transmitted, 2 received, 60% packet loss, time 4078ms\r\nrtt min/avg/max/mdev = 0.191/1.476/2.762/1.285 ms\r\n"
+    },
+    "R3 -> H1": {
+      "pass": true,
+      "details": "\u001b[?2004l\rPING 2001:db8:1::100 (2001:db8:1::100): 56 data bytes\r\n64 bytes from 2001:db8:1::100: seq=0 ttl=62 time=0.771 ms\r\n64 bytes from 2001:db8:1::100: seq=1 ttl=62 time=0.234 ms\r\n64 bytes from 2001:db8:1::100: seq=2 ttl=62 time=0.228 ms\r\n64 bytes from 2001:db8:1::100: seq=3 ttl=62 time=0.223 ms\r\n64 bytes from 2001:db8:1::100: seq=4 ttl=62 time=0.170 ms\r\n\r\n--- 2001:db8:1::100 ping statistics ---\r\n5 packets transmitted, 5 packets received, 0% packet loss\r\nround-trip min/avg/max = 0.170/0.325/0.771 ms\r\n\u001b[?2004h"
+    },
+    "gateway still reaches CONTROLLER": {
+      "pass": true,
+      "details": [
+        " cookie=0x0, duration=11.102s, table=0, n_packets=3, n_bytes=354, priority=200,ipv6,in_port=2,ipv6_dst=2001:db8:1::1 actions=CONTROLLER:65535"
+      ]
+    },
+    "local LAN protected by priority 190 punt": {
+      "pass": true,
+      "details": [
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=190,ipv6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_dst=2001:db8:1::/64 actions=CONTROLLER:65535"
+      ]
+    },
+    "OVS has 8+ forward data FlowMods with dec_ttl/MAC rewrite": {
+      "pass": true,
+      "details": [
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,tcp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,udp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=1 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=2 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=3 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=4 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=5, n_bytes=590, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=128 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=4, n_bytes=472, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=129 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1"
+      ]
+    },
+    "OVS has 8+ reverse data FlowMods with dec_ttl/MAC rewrite": {
+      "pass": true,
+      "details": [
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,tcp6,in_port=1,ipv6_dst=2001:db8:1::100 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,udp6,in_port=1,ipv6_dst=2001:db8:1::100 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=1 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=2 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=3 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2",
+        " cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=4 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2",
+        " cookie=0x0, duration=11.101s, table=0, n_packets=4, n_bytes=472, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=128 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2",
+        " cookie=0x0, duration=11.101s, table=0, n_packets=2, n_bytes=236, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=129 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2"
+      ]
+    },
+    "forward dataplane counters increased": {
+      "pass": true,
+      "details": {
+        "before": 0,
+        "after": 9
+      }
+    },
+    "reverse dataplane counters increased": {
+      "pass": true,
+      "details": {
+        "before": 0,
+        "after": 6
+      }
+    }
+  },
+  "raw": {
+    "r1_neighbors": "\u001b[?2004l\rNeighbor ID     Pri    DeadTime    State/IfState         Duration I/F[State]\r\n2.2.2.2           1    00:00:32     Full/PointToPoint    00:00:00 r1-eth0[PointToPoint]\r\n3.3.3.3           1    00:00:34     Full/PointToPoint    00:00:00 r1-eth1[PointToPoint]\r\n10.10.10.10       1    00:00:31     Full/PointToPoint    00:00:10 r1-eth2[PointToPoint]\r\n\u001b[?2004h",
+    "r1_ospf_routes": "\u001b[?2004l\r*N IA 2001:db8:1::/64                fe80::10                  r1-eth2 00:00:00\r\n*N IA 2001:db8:10::/64               ::                        r1-eth2 00:00:00\r\n*N IA 2001:db8:12::/64               ::                        r1-eth0 00:00:00\r\n*N IA 2001:db8:31::/64               ::                        r1-eth1 00:00:00\r\n\u001b[?2004h",
+    "r1_kernel_route": "\u001b[?2004l\r2001:db8:1::/64 nhid 30 via fe80::10 dev r1-eth2 proto ospf metric 20 pref medium\r\n\u001b[?2004h",
+    "ovs_before": "OFPST_FLOW reply (OF1.3) (xid=0x2):\n cookie=0x0, duration=12.615s, table=0, n_packets=24, n_bytes=2956, priority=0 actions=CONTROLLER:65535\n",
+    "ovs_after": "OFPST_FLOW reply (OF1.3) (xid=0x2):\n cookie=0x0, duration=11.102s, table=0, n_packets=3, n_bytes=354, priority=200,ipv6,in_port=2,ipv6_dst=2001:db8:1::1 actions=CONTROLLER:65535\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=190,ipv6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_dst=2001:db8:1::/64 actions=CONTROLLER:65535\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,tcp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,udp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=1 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=2 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=3 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=4 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1\n cookie=0x0, duration=11.102s, table=0, n_packets=5, n_bytes=590, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=128 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1\n cookie=0x0, duration=11.102s, table=0, n_packets=4, n_bytes=472, priority=110,icmp6,in_port=2,dl_dst=02:00:00:00:00:01,ipv6_src=2001:db8:1::100,ipv6_dst=2000::/3,icmp_type=129 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:9e:2f:af:c5:b3:06->eth_dst,output:1\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,tcp6,in_port=1,ipv6_dst=2001:db8:1::100 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,udp6,in_port=1,ipv6_dst=2001:db8:1::100 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=1 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=2 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=3 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2\n cookie=0x0, duration=11.102s, table=0, n_packets=0, n_bytes=0, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=4 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2\n cookie=0x0, duration=11.101s, table=0, n_packets=4, n_bytes=472, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=128 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2\n cookie=0x0, duration=11.101s, table=0, n_packets=2, n_bytes=236, priority=100,icmp6,in_port=1,ipv6_dst=2001:db8:1::100,icmp_type=129 actions=dec_ttl,set_field:02:00:00:00:00:01->eth_src,set_field:aa:ba:f8:25:f0:b6->eth_dst,output:2\n cookie=0x0, duration=23.730s, table=0, n_packets=32, n_bytes=3948, priority=0 actions=CONTROLLER:65535\n",
+    "h1_gateway": "PING 2001:db8:1::1 (2001:db8:1::1) 56 data bytes\r\n64 bytes from 2001:db8:1::1: icmp_seq=1 ttl=64 time=11.7 ms\r\n64 bytes from 2001:db8:1::1: icmp_seq=2 ttl=64 time=2.35 ms\r\n64 bytes from 2001:db8:1::1: icmp_seq=3 ttl=64 time=2.43 ms\r\n\r\n--- 2001:db8:1::1 ping statistics ---\r\n3 packets transmitted, 3 received, 0% packet loss, time 2004ms\r\nrtt min/avg/max/mdev = 2.354/5.489/11.685/4.380 ms\r\n",
+    "h1_r3": "PING 2001:db8:23::3 (2001:db8:23::3) 56 data bytes\r\n64 bytes from 2001:db8:23::3: icmp_seq=4 ttl=62 time=2.76 ms\r\n64 bytes from 2001:db8:23::3: icmp_seq=5 ttl=62 time=0.191 ms\r\n\r\n--- 2001:db8:23::3 ping statistics ---\r\n5 packets transmitted, 2 received, 60% packet loss, time 4078ms\r\nrtt min/avg/max/mdev = 0.191/1.476/2.762/1.285 ms\r\n",
+    "r3_h1": "\u001b[?2004l\rPING 2001:db8:1::100 (2001:db8:1::100): 56 data bytes\r\n64 bytes from 2001:db8:1::100: seq=0 ttl=62 time=0.771 ms\r\n64 bytes from 2001:db8:1::100: seq=1 ttl=62 time=0.234 ms\r\n64 bytes from 2001:db8:1::100: seq=2 ttl=62 time=0.228 ms\r\n64 bytes from 2001:db8:1::100: seq=3 ttl=62 time=0.223 ms\r\n64 bytes from 2001:db8:1::100: seq=4 ttl=62 time=0.170 ms\r\n\r\n--- 2001:db8:1::100 ping statistics ---\r\n5 packets transmitted, 5 packets received, 0% packet loss\r\nround-trip min/avg/max = 0.170/0.325/0.771 ms\r\n\u001b[?2004h"
+  },
+  "passed": true
+}

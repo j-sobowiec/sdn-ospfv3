@@ -1,0 +1,34 @@
+{
+  "branch": "uproszczenie-ospfv3",
+  "files_added": {
+    "tests/_stage06_lsdb_reference.py": "77631af12c1591f04c0c03ae65b6ad192f600c32d37bcb0070a211cf82c96df9",
+    "tests/_stage06_neighbor_reference.py": "4eadc2bc65fe4ea6a9e0d6c5e589a4a4cfd05641b3779bd0ac2de7a159ee1d02",
+    "tests/_stage06_packet_reference.py": "e2681a57b6369a8dd2c7d317b426e328f4b005808971f8c87295a7a6e771d706",
+    "tests/_stage06_parser_reference.py": "cdab10f49cc6102cbdb470d4ebcf81e2aa349f39deed8c8b37e4bd61e592447f",
+    "tests/test_stage06_protocol_contract.py": "76d2802499a4dfa257cac6da5ed2d8c51781e2511c8492bee52be920d2238a31"
+  },
+  "files_replaced": {
+    "ospfv3/lsdb.py": [
+      "77631af12c1591f04c0c03ae65b6ad192f600c32d37bcb0070a211cf82c96df9",
+      "57f42015313a150a7422342ed8fd1fd5438dbda441625a5edc05d75ca8bfe68a"
+    ],
+    "ospfv3/neighbor.py": [
+      "4eadc2bc65fe4ea6a9e0d6c5e589a4a4cfd05641b3779bd0ac2de7a159ee1d02",
+      "fcbf8a0c85b095243e195d55e18a1bbdc2ecc32a588468416255635e320476a8"
+    ],
+    "ospfv3/packet.py": [
+      "e2681a57b6369a8dd2c7d317b426e328f4b005808971f8c87295a7a6e771d706",
+      "4612a864c725b3487662ad9ed1489323563944c9dd6211da69f9abca427f318d"
+    ],
+    "ospfv3/parser.py": [
+      "cdab10f49cc6102cbdb470d4ebcf81e2aa349f39deed8c8b37e4bd61e592447f",
+      "0d51dc103e839ccb953737a5abe057683a3885d317a5fc73441977e09e2219fc"
+    ]
+  },
+  "git_status_after": " M controller_openflow.py\n M dataplane.py\n M ospfv3/controller_diagnostics.py\n M ospfv3/controller_rx.py\n M ospfv3/controller_timers.py\n M ospfv3/controller_tx.py\n M ospfv3/local_lsa.py\n M ospfv3/lsa.py\n M ospfv3/lsdb.py\n M ospfv3/neighbor.py\n M ospfv3/packet.py\n M ospfv3/parser.py\n D ospfv3/routing.py\n M ryu_sdn.py\n?? _migracja/\n?? tests/_stage04c_dataplane_reference.py\n?? tests/_stage04c_tx_reference.py\n?? tests/_stage05_local_lsa_reference.py\n?? tests/_stage05_lsa_reference.py\n?? tests/_stage06_lsdb_reference.py\n?? tests/_stage06_neighbor_reference.py\n?? tests/_stage06_packet_reference.py\n?? tests/_stage06_parser_reference.py\n?? tests/test_stage01_openflow_contract.py\n?? tests/test_stage02_spf_detach.py\n?? tests/test_stage03_no_spf_runtime.py\n?? tests/test_stage04a_diagnostics_contract.py\n?? tests/test_stage04b_rx_contract.py\n?? tests/test_stage04c_io_contract.py\n?? tests/test_stage05_lsa_contract.py\n?? tests/test_stage06_protocol_contract.py",
+  "git_status_before": " M controller_openflow.py\n M dataplane.py\n M ospfv3/controller_diagnostics.py\n M ospfv3/controller_rx.py\n M ospfv3/controller_timers.py\n M ospfv3/controller_tx.py\n M ospfv3/local_lsa.py\n M ospfv3/lsa.py\n D ospfv3/routing.py\n M ryu_sdn.py\n?? _migracja/\n?? tests/_stage04c_dataplane_reference.py\n?? tests/_stage04c_tx_reference.py\n?? tests/_stage05_local_lsa_reference.py\n?? tests/_stage05_lsa_reference.py\n?? tests/test_stage01_openflow_contract.py\n?? tests/test_stage02_spf_detach.py\n?? tests/test_stage03_no_spf_runtime.py\n?? tests/test_stage04a_diagnostics_contract.py\n?? tests/test_stage04b_rx_contract.py\n?? tests/test_stage04c_io_contract.py\n?? tests/test_stage05_lsa_contract.py",
+  "pin": "e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d",
+  "reduced_production_lines": 192,
+  "stage": "06",
+  "status": "applied-awaiting-integration"
+}

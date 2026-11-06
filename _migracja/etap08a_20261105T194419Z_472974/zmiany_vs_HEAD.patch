@@ -1,0 +1,4492 @@
+diff --git a/controller_openflow.py b/controller_openflow.py
+index e12496f..1ea980c 100644
+--- a/controller_openflow.py
++++ b/controller_openflow.py
+@@ -15,6 +15,11 @@ from ospfv3 import config as cfg
+ class OpenFlowMixin:
+     """Program IPv6 host routes and send OpenFlow PacketOut/FlowMod."""
+ 
++    # IPv6 global-unicast scope. OSPFv3 multicast/link-local and NDP
++    # are intentionally outside the forwarding contract.
++    _DATA_GLOBAL_PREFIX = ("2000::", "e000::")
++    _DATA_ICMPV6_TYPES = (1, 2, 3, 4, 128, 129)
++
+     def _send_action_flow(self, datapath, match, priority, actions):
+         """Send a FlowMod with the existing APPLY_ACTIONS instruction."""
+         parser = datapath.ofproto_parser
+@@ -109,7 +114,6 @@ class OpenFlowMixin:
+         host_ipv6,
+         host_mac
+     ):
+-
+         datapath = self.datapath
+         ofproto = datapath.ofproto
+         parser = datapath.ofproto_parser
+@@ -118,25 +122,11 @@ class OpenFlowMixin:
+         transit_port = self.data_plane.transit_port
+         transit_mac = self.data_plane.transit_router_mac
+ 
+-        ospf_routes = self.get_ospf_transit_routes()
+-
+-        route_signature = tuple(
+-            sorted(
+-                (
+-                    route["prefix"],
+-                    route["prefix_length"],
+-                    route["next_hop"]
+-                )
+-                for route in ospf_routes
+-            )
+-        )
+-
+         state = (
+             host_mac,
+             lan_port,
+             transit_mac,
+-            transit_port,
+-            route_signature
++            transit_port
+         )
+ 
+         previous_state = (
+@@ -149,38 +139,10 @@ class OpenFlowMixin:
+             return False
+ 
+         if previous_state is not None:
+-            previous_lan_port = previous_state[1]
+-            previous_route_signature = set(
+-                previous_state[4]
+-            )
+-
+-            current_route_signature = set(
+-                route_signature
+-            )
+-
+-            withdrawn_routes = (
+-                previous_route_signature
+-                - current_route_signature
++            self._delete_host_protocol_flows(
++                host_ipv6, previous_state
+             )
+ 
+-            for (
+-                prefix,
+-                prefix_length,
+-                next_hop
+-            ) in withdrawn_routes:
+-                self.delete_ipv6_route_flow(
+-                    host_ipv6=host_ipv6,
+-                    prefix=prefix,
+-                    prefix_length=prefix_length,
+-                    lan_port=previous_lan_port
+-                )
+-
+-        if (
+-            self.installed_ipv6_host_flows.get(host_ipv6)
+-            == state
+-        ):
+-            return False
+-
+         #
+         # Local logical gateway:
+         # packets addressed to 2001:db8:1::1
+@@ -201,70 +163,57 @@ class OpenFlowMixin:
+ 
+         self._send_action_flow(datapath, match, 200, actions)
+ 
+-        for route in ospf_routes:
+-            network = ipaddress.IPv6Network(
+-                f'{route["prefix"]}/{route["prefix_length"]}',
+-                strict=False
+-            )
+-
+-            match = parser.OFPMatch(
+-                in_port=lan_port,
+-                eth_type=ether_types.ETH_TYPE_IPV6,
+-                eth_dst=cfg.ROUTER_MAC,
+-                ipv6_src=host_ipv6,
+-                ipv6_dst=(
+-                    str(network.network_address),
+-                    str(network.netmask)
+-                )
++        # 2000::/3 also includes the local LAN! A more-specific punt
++        # prevents the generic R1 rule from swallowing LAN-destined IP.
++        lan_network = ipaddress.IPv6Network(
++            f"{cfg.LAN_PREFIX}/{cfg.LAN_PREFIX_LEN}", strict=False
++        )
++        lan_match = parser.OFPMatch(
++            in_port=lan_port,
++            eth_type=ether_types.ETH_TYPE_IPV6,
++            eth_dst=cfg.ROUTER_MAC,
++            ipv6_dst=(
++                str(lan_network.network_address),
++                str(lan_network.netmask)
+             )
++        )
++        self._send_action_flow(datapath, lan_match, 190, actions)
+ 
+-            actions = [
+-                parser.OFPActionDecNwTtl(),
+-                parser.OFPActionSetField(
+-                    eth_src=cfg.ROUTER_MAC
+-                ),
+-                parser.OFPActionSetField(
+-                    eth_dst=transit_mac
+-                ),
+-                parser.OFPActionOutput(
+-                    transit_port
+-                )
+-            ]
+-
+-            self._send_action_flow(datapath, match, 110, actions)
++        forward_actions = [
++            parser.OFPActionDecNwTtl(),
++            parser.OFPActionSetField(eth_src=cfg.ROUTER_MAC),
++            parser.OFPActionSetField(eth_dst=transit_mac),
++            parser.OFPActionOutput(transit_port)
++        ]
+ 
+-            self.logger.info(
+-                "[DATA][ROUTE FLOW INSTALL] "
+-                "host=%s dst=%s/%d via=%s",
+-                host_ipv6,
+-                route["prefix"],
+-                route["prefix_length"],
+-                route["next_hop"]
+-            )
++        # No route-prefix dependency: R1/FRRouting performs the IPv6
++        # destination lookup after OVS forwards the data-plane packet.
++        forward_base = dict(
++            in_port=lan_port,
++            eth_type=ether_types.ETH_TYPE_IPV6,
++            eth_dst=cfg.ROUTER_MAC,
++            ipv6_src=host_ipv6,
++            ipv6_dst=self._DATA_GLOBAL_PREFIX
++        )
++        for match in self._data_protocol_matches(parser, forward_base):
++            self._send_action_flow(datapath, match, 110, forward_actions)
+ 
+         #
+         # R1 -> LAN host
+         #
+-        match = parser.OFPMatch(
++        reverse_actions = [
++            parser.OFPActionDecNwTtl(),
++            parser.OFPActionSetField(eth_src=cfg.ROUTER_MAC),
++            parser.OFPActionSetField(eth_dst=host_mac),
++            parser.OFPActionOutput(lan_port)
++        ]
++        reverse_base = dict(
+             in_port=transit_port,
+-            eth_type=0x86dd,
++            eth_type=ether_types.ETH_TYPE_IPV6,
+             ipv6_dst=host_ipv6
+         )
+-
+-        actions = [
+-            parser.OFPActionDecNwTtl(),
+-            parser.OFPActionSetField(
+-                eth_src=cfg.ROUTER_MAC
+-            ),
+-            parser.OFPActionSetField(
+-                eth_dst=host_mac
+-            ),
+-            parser.OFPActionOutput(
+-                lan_port
+-            )
+-        ]
+-
+-        self._send_action_flow(datapath, match, 100, actions)
++        for match in self._data_protocol_matches(parser, reverse_base):
++            self._send_action_flow(datapath, match, 100, reverse_actions)
+ 
+         self.installed_ipv6_host_flows[
+             host_ipv6
+@@ -282,6 +231,47 @@ class OpenFlowMixin:
+ 
+         return True
+ 
++    def _data_protocol_matches(self, parser, base):
++        """Keep ND (ICMPv6 133-137) and OSPFv3 (89) off the fast path."""
++        for protocol in (6, 17):
++            yield parser.OFPMatch(**dict(base, ip_proto=protocol))
++        for icmp_type in self._DATA_ICMPV6_TYPES:
++            yield parser.OFPMatch(
++                **dict(base, ip_proto=58, icmpv6_type=icmp_type)
++            )
++
++    def _delete_host_protocol_flows(self, host_ipv6, state):
++        if self.datapath is None:
++            return
++
++        _host_mac, lan_port, _transit_mac, transit_port = state
++        datapath = self.datapath
++        parser = datapath.ofproto_parser
++        forward_base = dict(
++            in_port=lan_port,
++            eth_type=ether_types.ETH_TYPE_IPV6,
++            eth_dst=cfg.ROUTER_MAC,
++            ipv6_src=host_ipv6,
++            ipv6_dst=self._DATA_GLOBAL_PREFIX
++        )
++        reverse_base = dict(
++            in_port=transit_port,
++            eth_type=ether_types.ETH_TYPE_IPV6,
++            ipv6_dst=host_ipv6
++        )
++        for match in self._data_protocol_matches(parser, forward_base):
++            self._send_strict_delete(datapath, match, 110)
++        for match in self._data_protocol_matches(parser, reverse_base):
++            self._send_strict_delete(datapath, match, 100)
++
++    def withdraw_all_ipv6_host_flows(self):
++        """Fail closed after R1 adjacency loss, without touching OSPF/LSDB."""
++        for host_ipv6, state in list(
++            self.installed_ipv6_host_flows.items()
++        ):
++            self._delete_host_protocol_flows(host_ipv6, state)
++        self.installed_ipv6_host_flows.clear()
++
+ 
+     def delete_ipv6_route_flow(
+         self,
+diff --git a/dataplane.py b/dataplane.py
+index 5303a7b..1dea809 100644
+--- a/dataplane.py
++++ b/dataplane.py
+@@ -1,312 +1,146 @@
+-from ryu.lib.packet import ethernet
+-from ryu.lib.packet import ipv6
+-from ryu.lib.packet import icmpv6
+-from ryu.lib.packet import packet
+-from ryu.lib.packet import ether_types
++"""IPv6 LAN/transit state and local NDP/ICMPv6 responses for the SDN gateway.
++
++Ryu owns the logical gateway; FRRouting owns paths beyond the transit link.
++Only a verified OSPFv3 transit peer can resolve the link-local address.
++"""
+ 
+-from ospfv3 import config as cfg
+ import ipaddress
+ 
++from ryu.lib.packet import ethernet, ipv6, icmpv6, packet, ether_types
++from ospfv3 import config as cfg
++
++
+ class DataPlane:
+     def __init__(self):
+         self.lan_port = None
+         self.lan_hosts = {}
+-
+         self.transit_port = None
+         self.transit_neighbors = {}
+-
+         self.transit_router_mac = None
+         self.transit_router_ipv6 = None
+-
+         self.lan_network = ipaddress.IPv6Network(
+-            f"{cfg.LAN_PREFIX}/{cfg.LAN_PREFIX_LEN}",
+-            strict=False
+-        )
+-
+-    def learn_transit_router(
+-        self,
+-        in_port,
+-        ipv6_address,
+-        mac_address
+-    ):
+-        changed = (
+-            self.transit_port != in_port
+-            or self.transit_router_mac != mac_address
+-            or self.transit_router_ipv6 != ipv6_address
+-        )
++            f"{cfg.LAN_PREFIX}/{cfg.LAN_PREFIX_LEN}", strict=False)
+ 
++    def learn_transit_router(self, in_port, ipv6_address, mac_address):
++        changed = (self.transit_port != in_port
++                   or self.transit_router_mac != mac_address
++                   or self.transit_router_ipv6 != ipv6_address)
+         self.transit_port = in_port
+         self.transit_router_mac = mac_address
+         self.transit_router_ipv6 = ipv6_address
+-
+-        self.transit_neighbors[
+-            ipv6_address
+-        ] = mac_address
+-
++        self.transit_neighbors[ipv6_address] = mac_address
+         return changed
+ 
+     def reset(self):
+         self.lan_port = None
+         self.lan_hosts.clear()
+-
+-        self.transit_port = None
+-        self.transit_neighbors.clear()
+-
+-        self.transit_router_mac = None
+-        self.transit_router_ipv6 = None
++        self.reset_transit()
+ 
+     def reset_transit(self):
+         self.transit_port = None
+         self.transit_neighbors.clear()
+-
+         self.transit_router_mac = None
+         self.transit_router_ipv6 = None
+ 
+-    def learn_lan_host(
+-        self,
+-        in_port,
+-        ipv6_address,
+-        mac_address
+-    ):
++    def learn_lan_host(self, in_port, ipv6_address, mac_address):
+         try:
+-            source_ipv6 = ipaddress.IPv6Address(
+-                ipv6_address
+-            )
++            source_ipv6 = ipaddress.IPv6Address(ipv6_address)
+         except ValueError:
+             return False
+-
+         if source_ipv6 not in self.lan_network:
+             return False
+-
+-        if (
+-            self.transit_port is not None
+-            and in_port == self.transit_port
+-        ):
++        if self.transit_port is not None and in_port == self.transit_port:
+             return False
+-
+         if self.lan_port is None:
+             self.lan_port = in_port
+-
+         elif in_port != self.lan_port:
+             return False
+-
+-        self.lan_hosts[
+-            ipv6_address
+-        ] = mac_address
+-
++        self.lan_hosts[ipv6_address] = mac_address
+         return True
+ 
+-    def handle_ndp(
+-        self,
+-        pkt,
+-        eth_pkt,
+-        ipv6_pkt,
+-        in_port
+-    ):
+-        icmp_pkt = pkt.get_protocol(
+-            icmpv6.icmpv6
+-        )
+-
+-        if icmp_pkt is None:
+-            return None
+-
+-        if icmp_pkt.type_ != icmpv6.ND_NEIGHBOR_SOLICIT:
++    def handle_ndp(self, pkt, eth_pkt, ipv6_pkt, in_port):
++        icmp_pkt = pkt.get_protocol(icmpv6.icmpv6)
++        if icmp_pkt is None or icmp_pkt.type_ != icmpv6.ND_NEIGHBOR_SOLICIT:
+             return None
+-
+-        if not isinstance(
+-            icmp_pkt.data,
+-            icmpv6.nd_neighbor
+-        ):
++        if not isinstance(icmp_pkt.data, icmpv6.nd_neighbor):
+             return None
+-
+-        # RFC 4861, Section 7.1.1: reject invalid Neighbor Solicitations
+-        # before learning any LAN/transit state or generating an NA.
++        # RFC 4861 §7.1.1: reject malformed NS before learning any state.
+         if ipv6_pkt.hop_limit != 255 or icmp_pkt.code != 0:
+             return None
+-
+         target = icmp_pkt.data.dst
+-
+-        if target not in (
+-            cfg.LAN_GATEWAY,
+-            cfg.LINK_LOCAL
+-        ):
++        if target not in (cfg.LAN_GATEWAY, cfg.LINK_LOCAL):
+             return None
+-
+         if ipv6_pkt.src == "::":
+             return None
++        source_ipv6 = ipaddress.IPv6Address(ipv6_pkt.src)
+ 
+-        source_ipv6 = ipaddress.IPv6Address(
+-            ipv6_pkt.src
+-        )
+-
+-        # LAN-side NDP:
+-        # only a host from the configured LAN prefix may
+-        # resolve the logical LAN gateway.
+         if target == cfg.LAN_GATEWAY:
+             if source_ipv6 not in self.lan_network:
+                 return None
+-
+-            # Never learn the LAN side from the verified
+-            # OSPF transit port.
+-            if (
+-                self.transit_port is not None
+-                and in_port == self.transit_port
+-            ):
++            if self.transit_port is not None and in_port == self.transit_port:
+                 return None
+-
+-            # The first valid LAN NS identifies the LAN port.
+             if self.lan_port is None:
+                 self.lan_port = in_port
+-
+-            # Once learned, the LAN gateway answers only
+-            # on that same port.
+             elif in_port != self.lan_port:
+                 return None
+-
+-            self.lan_hosts[
+-                ipv6_pkt.src
+-            ] = eth_pkt.src
+-
+-        # Transit-side NDP:
+-        # fe80::10 belongs only to the point-to-point
+-        # OSPF-facing interface.
++            self.lan_hosts[ipv6_pkt.src] = eth_pkt.src
+         elif target == cfg.LINK_LOCAL:
+-            if self.transit_port is None:
++            if self.transit_port is None or in_port != self.transit_port:
+                 return None
+-
+-            if in_port != self.transit_port:
+-                return None
+-
+-            # The transit peer must already have been learned
+-            # from a verified OSPF Hello.
+-            if (
+-                self.transit_router_ipv6 is None
+-                or self.transit_router_mac is None
+-            ):
++            if self.transit_router_ipv6 is None or self.transit_router_mac is None:
+                 return None
+-
+             if ipv6_pkt.src != self.transit_router_ipv6:
+                 return None
+-
+             if eth_pkt.src != self.transit_router_mac:
+                 return None
+-
+-            self.transit_neighbors[
+-                ipv6_pkt.src
+-            ] = eth_pkt.src
++            self.transit_neighbors[ipv6_pkt.src] = eth_pkt.src
+ 
+         return self.build_neighbor_advertisement(
+-            destination_mac=eth_pkt.src,
+-            destination_ipv6=ipv6_pkt.src,
+-            target_ipv6=target
+-        )
++            destination_mac=eth_pkt.src, destination_ipv6=ipv6_pkt.src,
++            target_ipv6=target)
+ 
+     @staticmethod
+     def _icmpv6_packet(destination_mac, source_ipv6, destination_ipv6, hop_limit):
+         pkt = packet.Packet()
+-        pkt.add_protocol(
+-            ethernet.ethernet(
+-                dst=destination_mac,
+-                src=cfg.ROUTER_MAC,
+-                ethertype=ether_types.ETH_TYPE_IPV6
+-            )
+-        )
+-        pkt.add_protocol(
+-            ipv6.ipv6(
+-                src=source_ipv6,
+-                dst=destination_ipv6,
+-                nxt=58,
+-                hop_limit=hop_limit
+-            )
+-        )
++        pkt.add_protocol(ethernet.ethernet(
++            dst=destination_mac, src=cfg.ROUTER_MAC,
++            ethertype=ether_types.ETH_TYPE_IPV6))
++        pkt.add_protocol(ipv6.ipv6(
++            src=source_ipv6, dst=destination_ipv6, nxt=58, hop_limit=hop_limit))
+         return pkt
+ 
+     @staticmethod
+     def _serialize_icmpv6(pkt, type_, data):
+-        pkt.add_protocol(
+-            icmpv6.icmpv6(type_=type_, code=0, csum=0, data=data)
+-        )
++        pkt.add_protocol(icmpv6.icmpv6(type_=type_, code=0, csum=0, data=data))
+         pkt.serialize()
+         return bytes(pkt.data)
+ 
+-    def build_neighbor_advertisement(
+-        self,
+-        destination_mac,
+-        destination_ipv6,
+-        target_ipv6
+-    ):
+-        pkt = self._icmpv6_packet(
+-            destination_mac, target_ipv6, destination_ipv6, 255
+-        )
++    def build_neighbor_advertisement(self, destination_mac,
++                                     destination_ipv6, target_ipv6):
++        pkt = self._icmpv6_packet(destination_mac, target_ipv6,
++                                  destination_ipv6, 255)
+         option = icmpv6.nd_option_tla(hw_src=cfg.ROUTER_MAC)
+-        neighbor = icmpv6.nd_neighbor(
+-            res=0x7,
+-            dst=target_ipv6,
+-            option=option
+-        )
++        neighbor = icmpv6.nd_neighbor(res=0x7, dst=target_ipv6, option=option)
+         return self._serialize_icmpv6(pkt, icmpv6.ND_NEIGHBOR_ADVERT, neighbor)
+ 
+-    def build_echo_reply(
+-        self,
+-        destination_mac,
+-        destination_ipv6,
+-        echo_data
+-    ):
+-        pkt = self._icmpv6_packet(
+-            destination_mac, cfg.LAN_GATEWAY, destination_ipv6, 64
+-        )
+-        reply_data = icmpv6.echo(
+-            id_=echo_data.id,
+-            seq=echo_data.seq,
+-            data=echo_data.data
+-        )
+-        return self._serialize_icmpv6(pkt, 129, reply_data)
+-
+-    def handle_echo_request(
+-        self,
+-        pkt,
+-        eth_pkt,
+-        ipv6_pkt,
+-        in_port
+-    ):
+-        """
+-        Handles ICMPv6 Echo Request addressed to the
+-        logical SDN LAN gateway.
++    def build_echo_reply(self, destination_mac, destination_ipv6, echo_data):
++        pkt = self._icmpv6_packet(destination_mac, cfg.LAN_GATEWAY,
++                                  destination_ipv6, 64)
++        reply = icmpv6.echo(id_=echo_data.id, seq=echo_data.seq,
++                            data=echo_data.data)
++        return self._serialize_icmpv6(pkt, 129, reply)
+ 
+-        Returns a serialized Echo Reply frame or None.
+-        """
+-
+-        icmp_pkt = pkt.get_protocol(
+-            icmpv6.icmpv6
+-        )
+-
+-        if icmp_pkt is None:
++    def handle_echo_request(self, pkt, eth_pkt, ipv6_pkt, in_port):
++        icmp_pkt = pkt.get_protocol(icmpv6.icmpv6)
++        if icmp_pkt is None or icmp_pkt.type_ != 128:
+             return None
+-
+-        # ICMPv6 Echo Request = 128
+-        if icmp_pkt.type_ != 128:
+-            return None
+-
+         if ipv6_pkt.dst != cfg.LAN_GATEWAY:
+             return None
+-
+-        if not isinstance(
+-            icmp_pkt.data,
+-            icmpv6.echo
+-        ):
++        if not isinstance(icmp_pkt.data, icmpv6.echo):
+             return None
+-
+-        lan_host_valid = self.learn_lan_host(
+-            in_port=in_port,
+-            ipv6_address=ipv6_pkt.src,
+-            mac_address=eth_pkt.src
+-        )
+-
+-        if not lan_host_valid:
++        if not self.learn_lan_host(in_port=in_port, ipv6_address=ipv6_pkt.src,
++                                   mac_address=eth_pkt.src):
+             return None
+-
+         return self.build_echo_reply(
+-            destination_mac=eth_pkt.src,
+-            destination_ipv6=ipv6_pkt.src,
+-            echo_data=icmp_pkt.data
+-        )
+\ No newline at end of file
++            destination_mac=eth_pkt.src, destination_ipv6=ipv6_pkt.src,
++            echo_data=icmp_pkt.data)
+diff --git a/ospfv3/controller_diagnostics.py b/ospfv3/controller_diagnostics.py
+index c01fa5d..8825560 100644
+--- a/ospfv3/controller_diagnostics.py
++++ b/ospfv3/controller_diagnostics.py
+@@ -1,290 +1,40 @@
+-"""Human-readable OSPFv3 diagnostics for the Ryu controller.
++"""Concise OSPFv3 event diagnostics; no independent protocol state.
+ 
+-Mixin formats protocol events, LSA updates, SPF results and IPv6 routes.
+-It uses the controller's logger and shared protocol/routing state,
+-without keeping independent state or registering Ryu events.
++The OSPF handlers keep their exact call interface. Verbose per-field and
++per-prefix dumps are unnecessary for the single Ryu--R1 adjacency, while
++state transitions and rejection warnings remain logged at their call sites.
+ """
+ 
+-import ipaddress
+-
+-from ospfv3 import config as cfg
+-from ospfv3.lsa import ospfv3_lsa_type_description
+-
+ 
+ class OSPFDiagnosticsMixin:
+-    """Logging responsibility separated from protocol and OpenFlow logic."""
+-
+-    def log_hello(
+-        self,
+-        in_port,
+-        ipv6_pkt,
+-        pkt_len,
+-        router_id_text,
+-        area_id_text,
+-        interface_id,
+-        priority,
+-        options,
+-        hello_interval,
+-        dead_interval,
+-        neighbors
+-    ):
+-        neighbors_text = ", ".join(neighbors) if neighbors else "-"
+-
+-        self.logger.info(
+-            "\n[OSPF][HELLO RX] "
+-            "router=%s src=%s port=%s area=%s len=%d",
+-            router_id_text,
+-            ipv6_pkt.src,
+-            in_port,
+-            area_id_text,
+-            pkt_len
+-        )
+-
+-        self.logger.info(
+-            "  ifid=%s priority=%d "
+-            "hello=%ds dead=%ds "
+-            "options=0x%06x neighbors=%s",
+-            interface_id,
+-            priority,
+-            hello_interval,
+-            dead_interval,
+-            options,
+-            neighbors_text
+-        )
+-
+-    def log_dbd(
+-        self,
+-        in_port,
+-        ipv6_pkt,
+-        router_id_text,
+-        area_id_text,
+-        interface_mtu,
+-        options,
+-        i_bit,
+-        m_bit,
+-        ms_bit,
+-        dd_sequence,
+-        lsa_headers
+-    ):
+-        flags_text = ",".join(
+-            flag for flag, enabled in (
+-                ("I", i_bit), ("M", m_bit), ("MS", ms_bit)
+-            ) if enabled
+-        ) or "-"
+-
++    def log_hello(self, in_port, ipv6_pkt, pkt_len, router_id_text,
++                  area_id_text, interface_id, priority, options,
++                  hello_interval, dead_interval, neighbors):
+         self.logger.info(
+-            "\n[OSPF][DBD RX] "
+-            "router=%s src=%s port=%s area=%s",
+-            router_id_text,
+-            ipv6_pkt.src,
+-            in_port,
+-            area_id_text
++            "[OSPF][HELLO RX] router=%s src=%s port=%s area=%s "
++            "ifid=%s hello=%ds dead=%ds neighbors=%d",
++            router_id_text, ipv6_pkt.src, in_port, area_id_text,
++            interface_id, hello_interval, dead_interval, len(neighbors)
+         )
+ 
++    def log_dbd(self, in_port, ipv6_pkt, router_id_text, area_id_text,
++                interface_mtu, options, i_bit, m_bit, ms_bit, dd_sequence,
++                lsa_headers):
+         self.logger.info(
+-            "  mtu=%d seq=0x%08x "
+-            "flags=%s options=0x%06x summaries=%d",
+-            interface_mtu,
+-            dd_sequence,
+-            flags_text,
+-            options,
++            "[OSPF][DBD RX] router=%s src=%s port=%s area=%s "
++            "mtu=%d seq=0x%08x flags=%d%d%d summaries=%d",
++            router_id_text, ipv6_pkt.src, in_port, area_id_text,
++            interface_mtu, dd_sequence,
++            int(bool(i_bit)), int(bool(m_bit)), int(bool(ms_bit)),
+             len(lsa_headers)
+         )
+ 
+-        for lsa in lsa_headers:
+-            self.logger.info(
+-                "    -> %s adv=%s lsid=%s seq=0x%08x",
+-                ospfv3_lsa_type_description(
+-                    lsa["ls_type"]
+-                ),
+-                lsa["advertising_router"],
+-                lsa["link_state_id"],
+-                lsa["ls_sequence"]
+-            )
+-
+-    def log_lsu(
+-        self,
+-        in_port,
+-        ipv6_pkt,
+-        pkt_len,
+-        router_id_text,
+-        area_id_text,
+-        lsa_headers
+-    ):
++    def log_lsu(self, in_port, ipv6_pkt, pkt_len, router_id_text,
++                area_id_text, lsa_headers):
+         self.logger.info(
+-            "\n[OSPF][LSU RX] "
+-            "router=%s src=%s port=%s area=%s "
+-            "lsas=%d len=%d",
+-            router_id_text,
+-            ipv6_pkt.src,
+-            in_port,
+-            area_id_text,
+-            len(lsa_headers),
+-            pkt_len
++            "[OSPF][LSU RX] router=%s src=%s port=%s area=%s "
++            "lsas=%d len=%d types=%s",
++            router_id_text, ipv6_pkt.src, in_port, area_id_text,
++            len(lsa_headers), pkt_len,
++            ",".join("0x%04x" % lsa["ls_type"] for lsa in lsa_headers)
+         )
+-
+-        for index, lsa in enumerate(
+-            lsa_headers,
+-            start=1
+-        ):
+-            lsa_type = lsa["ls_type"]
+-
+-            self.logger.info(
+-                "  #%d %s "
+-                "adv=%s "
+-                "lsid=%s "
+-                "seq=0x%08x "
+-                "age=%d",
+-                index,
+-                ospfv3_lsa_type_description(lsa_type),
+-                lsa["advertising_router"],
+-                lsa["link_state_id"],
+-                lsa["ls_sequence"],
+-                lsa["ls_age"]
+-            )
+-
+-            # Router-LSA
+-            if lsa_type == 0x2001:
+-                router_lsa = lsa["router_lsa"]
+-
+-                self.logger.info(
+-                    "     links=%d flags=0x%02x options=0x%06x",
+-                    len(router_lsa["links"]),
+-                    router_lsa["flags"],
+-                    router_lsa["options"]
+-                )
+-
+-                for link in router_lsa["links"]:
+-                    self.logger.info(
+-                        "       -> router=%s "
+-                        "cost=%d "
+-                        "if=%s "
+-                        "neighbor_if=%s",
+-                        link["neighbor_router_id"],
+-                        link["metric"],
+-                        link["interface_id"],
+-                        link["neighbor_interface_id"]
+-                    )
+-
+-            # Link-LSA
+-            elif lsa_type == 0x0008:
+-                link_lsa = lsa["link_lsa"]
+-
+-                self.logger.info(
+-                    "     link_local=%s "
+-                    "priority=%d "
+-                    "prefixes=%d",
+-                    link_lsa["link_local_address"],
+-                    link_lsa["router_priority"],
+-                    link_lsa["number_of_prefixes"]
+-                )
+-
+-                for prefix in link_lsa["prefixes"]:
+-                    self.logger.info(
+-                        "       -> %s/%d",
+-                        prefix["prefix"],
+-                        prefix["prefix_length"]
+-                    )
+-
+-            # Intra-Area-Prefix-LSA
+-            elif lsa_type == 0x2009:
+-                prefix_lsa = lsa[
+-                    "intra_area_prefix_lsa"
+-                ]
+-
+-                self.logger.info(
+-                    "     referenced=%s "
+-                    "router=%s "
+-                    "prefixes=%d",
+-                    ospfv3_lsa_type_description(
+-                        prefix_lsa["referenced_ls_type"]
+-                    ),
+-                    prefix_lsa[
+-                        "referenced_advertising_router"
+-                    ],
+-                    prefix_lsa["number_of_prefixes"]
+-                )
+-
+-                for prefix in prefix_lsa["prefixes"]:
+-                    self.logger.info(
+-                        "       -> %s/%d cost=%d",
+-                        prefix["prefix"],
+-                        prefix["prefix_length"],
+-                        prefix["metric"]
+-                    )
+-
+-    def log_spf_result(self):
+-        distances, previous = self.routing.run_spf()
+-
+-        self.logger.info(
+-            "\n[OSPF][SPF] root=%s",
+-            cfg.ROUTER_ID
+-        )
+-
+-        router_ids = [cfg.ROUTER_ID, *sorted(
+-            router_id for router_id in distances
+-            if router_id != cfg.ROUTER_ID
+-        )]
+-
+-        for router_id in router_ids:
+-            cost = distances[router_id]
+-            predecessor = previous[router_id]
+-
+-            next_hop = self.routing.get_spf_next_hop(
+-                router_id,
+-                previous
+-            )
+-
+-            self.logger.info(
+-                "  router=%s cost=%s "
+-                "predecessor=%s next-hop=%s",
+-                router_id,
+-                cost,
+-                predecessor,
+-                next_hop
+-            )
+-
+-    def log_ipv6_routing_table(self):
+-        routes = self.ipv6_routing_table
+-
+-        self.logger.info(
+-            "\n[OSPF][ROUTES] IPv6 routing table entries=%d",
+-            len(routes)
+-        )
+-
+-        sorted_routes = sorted(
+-            routes.values(),
+-            key=lambda route: ipaddress.IPv6Network(
+-                (
+-                    route["prefix"],
+-                    route["prefix_length"]
+-                ),
+-                strict=False
+-            )
+-        )
+-
+-        for route in sorted_routes:
+-            self.logger.info(
+-                "\n  %s/%d",
+-                route["prefix"],
+-                route["prefix_length"]
+-            )
+-
+-            if route["source"] == "connected":
+-                self.logger.info(
+-                    "      source=connected interface=%s",
+-                    route["interface"]
+-                )
+-                continue
+-
+-            self.logger.info(
+-                "      source=ospf cost=%d adv=%s",
+-                route["total_cost"],
+-                route["advertising_router"]
+-            )
+-
+-            self.logger.info(
+-                "      next-hop=%s interface=%s",
+-                route["next_hop"],
+-                route["interface"]
+-            )
+diff --git a/ospfv3/controller_rx.py b/ospfv3/controller_rx.py
+index e95e056..93edfda 100644
+--- a/ospfv3/controller_rx.py
++++ b/ospfv3/controller_rx.py
+@@ -1,9 +1,8 @@
+-"""Receive-side handlers for OSPFv3 protocol packets.
++"""Minimal receive-side OSPFv3 state machine for the single R1 neighbor.
+ 
+-This mixin processes Hello, DBD, LSR, LSU and LSAck messages,
+-checks adjacency and LSA state, and coordinates incoming updates.
+-The RyuApp owns the shared neighbor, LSDB and routing state;
+-handlers access other controller capabilities through ``self``.
++Hello, DBD, LSR, LSU and LSAck remain fully handled. This component still
++uses the existing Scapy-backed parser, LSDB and LocalLSA implementations;
++route selection belongs to FRRouting, not to Ryu.
+ """
+ 
+ import socket
+@@ -11,636 +10,231 @@ import struct
+ 
+ from ospfv3 import config as cfg
+ from ospfv3.parser import parse_hello, parse_dbd, parse_lsr, parse_lsu, parse_lsack
+-from ospfv3.lsa import ospfv3_lsa_type_description
+ 
+ 
+ class OSPFReceiveMixin:
+-    """Receive Hello/DBD/LSR/LSU/LSAck, neighbor eligibility and LSA split."""
+-
+-    def handle_ospf_hello(
+-        self,
+-        in_port,
+-        eth_pkt,
+-        ipv6_pkt,
+-        ospf_data,
+-        pkt_len,
+-        router_id_text,
+-        area_id_text
+-    ):
+-        """
+-        Handles a received OSPFv3 Hello packet.
+-        """
+-
++    def handle_ospf_hello(self, in_port, eth_pkt, ipv6_pkt, ospf_data,
++                          pkt_len, router_id_text, area_id_text):
+         try:
+-            hello = parse_hello(
+-                ospf_data,
+-                pkt_len
+-            )
++            hello = parse_hello(ospf_data, pkt_len)
+         except ValueError as exc:
+-            self.logger.warning(
+-                "[OSPF][HELLO] %s",
+-                exc
+-            )
++            self.logger.warning("[OSPF][HELLO] %s", exc)
+             return
+ 
+-        interface_id = hello["interface_id"]
+-        router_priority = hello["router_priority"]
+-        options = hello["options"]
+-        hello_interval = hello["hello_interval"]
+-        dead_interval = hello["dead_interval"]
+-        neighbors = hello["neighbors"]
+-
+-        if hello_interval != cfg.HELLO_INTERVAL:
+-            self.logger.warning(
+-                "[OSPF][HELLO DROP] hello interval mismatch "
+-                "received=%ds expected=%ds",
+-                hello_interval,
+-                cfg.HELLO_INTERVAL
+-            )
++        if hello["hello_interval"] != cfg.HELLO_INTERVAL:
++            self.logger.warning("[OSPF][HELLO DROP] hello interval mismatch "
++                                "received=%ds expected=%ds",
++                                hello["hello_interval"], cfg.HELLO_INTERVAL)
+             return
+-
+-        if dead_interval != cfg.DEAD_INTERVAL:
+-            self.logger.warning(
+-                "[OSPF][HELLO DROP] dead interval mismatch "
+-                "received=%ds expected=%ds",
+-                dead_interval,
+-                cfg.DEAD_INTERVAL
+-            )
++        if hello["dead_interval"] != cfg.DEAD_INTERVAL:
++            self.logger.warning("[OSPF][HELLO DROP] dead interval mismatch "
++                                "received=%ds expected=%ds",
++                                hello["dead_interval"], cfg.DEAD_INTERVAL)
+             return
+ 
+-        self.neighbor.mark_hello_received()
+-
+-        self.neighbor.port = in_port
+-        self.neighbor.ipv6 = ipv6_pkt.src
+-        self.neighbor.mac = eth_pkt.src
+-        self.neighbor.router_id = router_id_text
+-
+-        self.log_hello(
+-            in_port,
+-            ipv6_pkt,
+-            pkt_len,
+-            router_id_text,
+-            area_id_text,
+-            interface_id,
+-            router_priority,
+-            options,
+-            hello_interval,
+-            dead_interval,
+-            neighbors
+-        )
+-
+-        # Learn the transit-side L2 state only from a valid OSPF Hello.
+-        transit_changed = (
+-            self.data_plane.learn_transit_router(
+-                in_port=self.neighbor.port,
+-                ipv6_address=self.neighbor.ipv6,
+-                mac_address=self.neighbor.mac
+-            )
+-        )
+-
+-        if transit_changed:
+-            self.logger.info(
+-                "[DATA][TRANSIT LEARN] "
+-                "source=verified-ospf-hello "
+-                "ipv6=%s mac=%s port=%s",
+-                self.neighbor.ipv6,
+-                self.neighbor.mac,
+-                self.neighbor.port
+-            )
+-
++        neighbor = self.neighbor
++        neighbor.mark_hello_received()
++        neighbor.port, neighbor.ipv6 = in_port, ipv6_pkt.src
++        neighbor.mac, neighbor.router_id = eth_pkt.src, router_id_text
++        self.log_hello(in_port, ipv6_pkt, pkt_len, router_id_text, area_id_text,
++                       hello["interface_id"], hello["router_priority"],
++                       hello["options"], hello["hello_interval"],
++                       hello["dead_interval"], hello["neighbors"])
++
++        if self.data_plane.learn_transit_router(
++                in_port=neighbor.port, ipv6_address=neighbor.ipv6,
++                mac_address=neighbor.mac):
++            self.logger.info("[DATA][TRANSIT LEARN] "
++                             "source=verified-ospf-hello ipv6=%s mac=%s port=%s",
++                             neighbor.ipv6, neighbor.mac, neighbor.port)
+             self.try_install_ipv6_host_flows()
+ 
+-        # After a controller/switch restart, FRR may still consider the
+-        # previous OSPF adjacency alive because DeadInterval has not expired.
+-        #
+-        # If the peer still lists our Router ID, send one Hello without
+-        # advertising the peer as a neighbor. This forces the old adjacency
+-        # to be resynchronized.
++        # A restarted controller may encounter an adjacency FRR still keeps
++        # alive. A one-way Hello forces an actual database resynchronization.
+         if self.ospf_resync_required:
+             self.ospf_resync_required = False
+-
+-            if cfg.ROUTER_ID in neighbors:
+-                self.logger.info(
+-                    "[OSPF][RESYNC] "
+-                    "peer retained previous adjacency; "
+-                    "sending one-way Hello"
+-                )
+-
+-                self.send_ospfv3_hello(
+-                    neighbors=[]
+-                )
+-
++            if cfg.ROUTER_ID in hello["neighbors"]:
++                self.logger.info("[OSPF][RESYNC] peer retained adjacency; "
++                                 "sending one-way Hello")
++                self.send_ospfv3_hello(neighbors=[])
+                 return
+ 
+-        if router_id_text not in self.neighbor.router_ids:
+-            self.neighbor.router_ids.append(
+-                router_id_text
+-            )
+-
+-            self.logger.info(
+-                "[OSPF][NEIGHBOR] "
+-                "discovered router=%s src=%s",
+-                router_id_text,
+-                ipv6_pkt.src
+-            )
+-
++        if router_id_text not in neighbor.router_ids:
++            neighbor.router_ids.append(router_id_text)
++            self.logger.info("[OSPF][NEIGHBOR] discovered router=%s src=%s",
++                             router_id_text, ipv6_pkt.src)
+             self.send_ospfv3_hello()
+ 
+-    def is_current_ospf_neighbor(
+-        self,
+-        in_port,
+-        ipv6_pkt,
+-        router_id_text
+-    ):
+-        return (
+-            self.neighbor.router_id is not None
+-            and router_id_text == self.neighbor.router_id
+-            and router_id_text in self.neighbor.router_ids
+-            and ipv6_pkt.src == self.neighbor.ipv6
+-            and in_port == self.neighbor.port
+-        )
++    def is_current_ospf_neighbor(self, in_port, ipv6_pkt, router_id_text):
++        neighbor = self.neighbor
++        return (neighbor.router_id is not None
++                and router_id_text == neighbor.router_id
++                and router_id_text in neighbor.router_ids
++                and ipv6_pkt.src == neighbor.ipv6
++                and in_port == neighbor.port)
+ 
+     def _reject_noncurrent_ospf_neighbor(self, in_port, ipv6_pkt, router_id_text):
+-        """Keep the original drop warning in one place for all RX handlers."""
+         if self.is_current_ospf_neighbor(in_port, ipv6_pkt, router_id_text):
+             return False
+-        self.logger.warning(
+-            "[OSPF][DROP] packet from unknown neighbor "
+-            "router=%s src=%s port=%s",
+-            router_id_text, ipv6_pkt.src, in_port
+-        )
++        self.logger.warning("[OSPF][DROP] packet from unknown neighbor "
++                            "router=%s src=%s port=%s",
++                            router_id_text, ipv6_pkt.src, in_port)
+         return True
+ 
+     @staticmethod
+     def _split_ospf_lsa_by_origin(lsas):
+-        """Preserve the original two-pass filtering and ordering of LSAs."""
+-        return (
+-            [lsa for lsa in lsas if lsa["advertising_router"] == cfg.ROUTER_ID],
+-            [lsa for lsa in lsas if lsa["advertising_router"] != cfg.ROUTER_ID],
+-        )
+-
+-    def handle_ospf_dbd(
+-        self,
+-        in_port,
+-        ipv6_pkt,
+-        ospf_data,
+-        pkt_len,
+-        router_id,
+-        router_id_text,
+-        area_id_text
+-    ):
+-        """
+-        Handles a received OSPFv3 Database Description packet.
+-        """
++        return ([lsa for lsa in lsas if lsa["advertising_router"] == cfg.ROUTER_ID],
++                [lsa for lsa in lsas if lsa["advertising_router"] != cfg.ROUTER_ID])
+ 
+-        if self._reject_noncurrent_ospf_neighbor(
+-            in_port, ipv6_pkt, router_id_text
+-        ):
++    def handle_ospf_dbd(self, in_port, ipv6_pkt, ospf_data, pkt_len,
++                        router_id, router_id_text, area_id_text):
++        if self._reject_noncurrent_ospf_neighbor(in_port, ipv6_pkt, router_id_text):
+             return
+-
+         try:
+-            dbd = parse_dbd(
+-                ospf_data,
+-                pkt_len
+-            )
++            dbd = parse_dbd(ospf_data, pkt_len)
+         except ValueError as exc:
+-            self.logger.warning(
+-                "[OSPF][DBD] %s",
+-                exc
+-            )
++            self.logger.warning("[OSPF][DBD] %s", exc)
+             return
+ 
+-        interface_mtu = dbd["interface_mtu"]
+-        options = dbd["options"]
+-        i_bit = dbd["i_bit"]
+-        m_bit = dbd["m_bit"]
+-        ms_bit = dbd["ms_bit"]
+-        dd_sequence = dbd["dd_sequence"]
+-        lsa_headers = dbd["lsa_headers"]
+-
+-        if (
+-            interface_mtu == 0
+-            or interface_mtu > cfg.INTERFACE_MTU
+-        ):
+-            self.logger.warning(
+-                "[OSPF][DBD DROP] invalid MTU "
+-                "received=%d local=%d",
+-                interface_mtu,
+-                cfg.INTERFACE_MTU
+-            )
++        mtu = dbd["interface_mtu"]
++        if mtu == 0 or mtu > cfg.INTERFACE_MTU:
++            self.logger.warning("[OSPF][DBD DROP] invalid MTU "
++                                "received=%d local=%d", mtu, cfg.INTERFACE_MTU)
+             return
+-
+-        self.log_dbd(
+-            in_port,
+-            ipv6_pkt,
+-            router_id_text,
+-            area_id_text,
+-            interface_mtu,
+-            options,
+-            i_bit,
+-            m_bit,
+-            ms_bit,
+-            dd_sequence,
+-            lsa_headers
+-        )
+-
+-        local_router_id = struct.unpack(
+-            "!I",
+-            socket.inet_aton(cfg.ROUTER_ID)
+-        )[0]
+-
+-        is_initial_dbd = (
+-            i_bit
+-            and m_bit
+-            and ms_bit
+-            and pkt_len == 28
+-            and local_router_id > router_id
+-        )
+-
+-        if is_initial_dbd:
+-            if (
+-                self.neighbor.dbd_negotiated
+-                or self.neighbor.dbd_exchange_complete
+-            ):
+-                self.reset_dbd_state(
+-                    "neighbor restarted ExStart"
+-                )
+-
+-            self.logger.info(
+-                "[OSPF][DBD] ExStart "
+-                "local=%s peer=%s role=Master",
+-                cfg.ROUTER_ID,
+-                router_id_text
+-            )
+-
++        self.log_dbd(in_port, ipv6_pkt, router_id_text, area_id_text, mtu,
++                     dbd["options"], dbd["i_bit"], dbd["m_bit"], dbd["ms_bit"],
++                     dbd["dd_sequence"], dbd["lsa_headers"])
++
++        neighbor = self.neighbor
++        local_id = struct.unpack("!I", socket.inet_aton(cfg.ROUTER_ID))[0]
++        master = local_id > router_id
++        seq = dbd["dd_sequence"]
++
++        if (dbd["i_bit"] and dbd["m_bit"] and dbd["ms_bit"]
++                and pkt_len == 28 and master):
++            if neighbor.dbd_negotiated or neighbor.dbd_exchange_complete:
++                self.reset_dbd_state("neighbor restarted ExStart")
++            self.logger.info("[OSPF][DBD] ExStart local=%s peer=%s role=Master",
++                             cfg.ROUTER_ID, router_id_text)
+             self.send_initial_dbd()
+-
+-        elif (
+-            not self.neighbor.dbd_negotiated
+-            and not i_bit
+-            and not ms_bit
+-            and dd_sequence == self.neighbor.dbd_sequence
+-            and local_router_id > router_id
+-        ):
+-            self.logger.info(
+-                "[OSPF][DBD] negotiation-complete "
+-                "role=Master seq=0x%08x",
+-                dd_sequence
+-            )
+-
+-            self.neighbor.dbd_negotiated = True
+-
+-            self_originated_headers, remote_headers = (
+-                self._split_ospf_lsa_by_origin(lsa_headers)
+-            )
+-
+-            sequence_changed, recovered_count = (
+-                self.local_lsa.recover_sequences(
+-                    self_originated_headers,
+-                    prepare_next=not bool(
+-                        self.local_lsa
+-                    )
+-                )
+-            )
+-
+-            if (
+-                sequence_changed
+-                and self.local_lsa
+-            ):
++        elif (not neighbor.dbd_negotiated and not dbd["i_bit"]
++              and not dbd["ms_bit"] and seq == neighbor.dbd_sequence and master):
++            neighbor.dbd_negotiated = True
++            self.logger.info("[OSPF][DBD] negotiation-complete "
++                             "role=Master seq=0x%08x", seq)
++            mine, remote = self._split_ospf_lsa_by_origin(dbd["lsa_headers"])
++            changed, recovered = self.local_lsa.recover_sequences(
++                mine, prepare_next=not bool(self.local_lsa))
++            if changed and self.local_lsa:
+                 self.local_lsa_rebuild_required = True
+-
+-            self.neighbor.request_list = remote_headers
+-
+-            self.logger.info(
+-                "[OSPF][DBD] request-list=%d "
+-                "self-originated=%d",
+-                len(self.neighbor.request_list),
+-                recovered_count
+-            )
+-
+-            self.neighbor.dbd_sequence = (
+-                self.neighbor.dbd_sequence + 1
+-            ) & 0xffffffff
+-
++            neighbor.request_list = remote
++            self.logger.info("[OSPF][DBD] request-list=%d self-originated=%d",
++                             len(remote), recovered)
++            neighbor.dbd_sequence = (neighbor.dbd_sequence + 1) & 0xffffffff
+             self.send_exchange_dbd()
+-
+-        elif (
+-            self.neighbor.dbd_negotiated
+-            and not self.neighbor.dbd_exchange_complete
+-            and not i_bit
+-            and not m_bit
+-            and not ms_bit
+-            and dd_sequence == self.neighbor.dbd_sequence
+-        ):
+-            self.neighbor.dbd_exchange_complete = True
+-
+-            self.logger.info(
+-                "[OSPF][DBD] exchange-complete "
+-                "seq=0x%08x pending=%d",
+-                dd_sequence,
+-                len(self.neighbor.request_list)
+-            )
+-
+-            if (
+-                self.neighbor.request_list
+-                and not self.neighbor.lsr_sent
+-            ):
++        elif (neighbor.dbd_negotiated and not neighbor.dbd_exchange_complete
++              and not dbd["i_bit"] and not dbd["m_bit"] and not dbd["ms_bit"]
++              and seq == neighbor.dbd_sequence):
++            neighbor.dbd_exchange_complete = True
++            self.logger.info("[OSPF][DBD] exchange-complete "
++                             "seq=0x%08x pending=%d", seq,
++                             len(neighbor.request_list))
++            if neighbor.request_list and not neighbor.lsr_sent:
+                 self.send_link_state_request()
+ 
+-    def handle_ospf_lsr(
+-        self,
+-        in_port,
+-        ipv6_pkt,
+-        ospf_data,
+-        pkt_len,
+-        router_id_text,
+-        area_id_text
+-    ):
+-        """
+-        Handles a received OSPFv3 Link State Request packet.
+-        """
+-        if self._reject_noncurrent_ospf_neighbor(
+-            in_port, ipv6_pkt, router_id_text
+-        ):
++    def handle_ospf_lsr(self, in_port, ipv6_pkt, ospf_data,
++                        pkt_len, router_id_text, area_id_text):
++        if self._reject_noncurrent_ospf_neighbor(in_port, ipv6_pkt, router_id_text):
+             return
+-
+         try:
+-            requests = parse_lsr(
+-                ospf_data,
+-                pkt_len
+-            )
++            requests = parse_lsr(ospf_data, pkt_len)
+         except ValueError as exc:
+-            self.logger.warning(
+-                "[OSPF][LSR RX] %s",
+-                exc
+-            )
++            self.logger.warning("[OSPF][LSR RX] %s", exc)
+             return
+ 
+-        self.logger.info(
+-            "[OSPF][LSR RX] router=%s src=%s port=%s "
+-            "area=%s count=%d",
+-            router_id_text,
+-            ipv6_pkt.src,
+-            in_port,
+-            area_id_text,
+-            len(requests)
+-        )
+-
+-        requested_local_lsas = []
+-        requested_keys = set()
+-
++        self.logger.info("[OSPF][LSR RX] router=%s src=%s count=%d",
++                         router_id_text, ipv6_pkt.src, len(requests))
++        local_lsas, seen = [], set()
+         for request in requests:
+-            key = (
+-                request["ls_type"],
+-                request["link_state_id"],
+-                request["advertising_router"]
+-            )
+-
+-            local_lsa = self.local_lsa.get(key)
+-            local_match = local_lsa is not None
+-
+-            self.logger.info(
+-                "  -> %s adv=%s lsid=%s local-match=%s",
+-                ospfv3_lsa_type_description(
+-                    request["ls_type"]
+-                ),
+-                request["advertising_router"],
+-                request["link_state_id"],
+-                local_match
+-            )
+-
+-            if (
+-                local_lsa is not None
+-                and key not in requested_keys
+-            ):
+-                requested_local_lsas.append(
+-                    local_lsa
+-                )
+-
+-                requested_keys.add(key)
+-
+-        if requested_local_lsas:
+-            self.send_local_lsr_response(
+-                requested_local_lsas
+-            )
+-
+-    def handle_ospf_lsu(
+-        self,
+-        in_port,
+-        ipv6_pkt,
+-        ospf_data,
+-        pkt_len,
+-        router_id_text,
+-        area_id_text
+-    ):
+-        """
+-        Handles a received OSPFv3 Link State Update packet.
+-        """
+-
+-        if self._reject_noncurrent_ospf_neighbor(
+-            in_port, ipv6_pkt, router_id_text
+-        ):
++            key = (request["ls_type"], request["link_state_id"],
++                   request["advertising_router"])
++            item = self.local_lsa.get(key)
++            if item is not None and key not in seen:
++                local_lsas.append(item)
++                seen.add(key)
++        if local_lsas:
++            self.send_local_lsr_response(local_lsas)
++
++    def handle_ospf_lsu(self, in_port, ipv6_pkt, ospf_data,
++                        pkt_len, router_id_text, area_id_text):
++        if self._reject_noncurrent_ospf_neighbor(in_port, ipv6_pkt, router_id_text):
+             return
+-
+         try:
+-            lsu_lsa_headers = parse_lsu(
+-                ospf_data,
+-                pkt_len
+-            )
++            received = parse_lsu(ospf_data, pkt_len)
+         except ValueError as exc:
+-            self.logger.warning(
+-                "[OSPF][LSU] %s",
+-                exc
+-            )
++            self.logger.warning("[OSPF][LSU] %s", exc)
+             return
+-
+-        self.log_lsu(
+-            in_port,
+-            ipv6_pkt,
+-            pkt_len,
+-            router_id_text,
+-            area_id_text,
+-            lsu_lsa_headers
+-        )
+-
+-        if lsu_lsa_headers:
+-            self.neighbor.update_request_list(
+-                lsu_lsa_headers
+-            )
+-
+-            self_originated_lsas, remote_lsas = (
+-                self._split_ospf_lsa_by_origin(lsu_lsa_headers)
+-            )
+-
+-            if self_originated_lsas:
+-                sequence_changed, recovered_count = (
+-                    self.local_lsa.recover_sequences(
+-                        self_originated_lsas,
+-                        prepare_next=not bool(
+-                            self.local_lsa
+-                        )
+-                    )
+-                )
+-
+-                self.logger.info(
+-                    "[OSPF][SELF LSA] "
+-                    "received=%d excluded-from-remote-lsdb",
+-                    recovered_count
+-                )
+-
+-                if (
+-                    sequence_changed
+-                    and self.local_lsa
+-                ):
+-                    self.local_lsa_rebuild_required = True
+-
+-            routing_changed = False
+-
+-            if remote_lsas:
+-                routing_changed = self.lsdb.update(
+-                    remote_lsas
+-                )
+-
+-            if routing_changed:
+-                self.recompute_routing_state()
+-
+-            if not self.local_lsa:
+-                self.local_lsa.initialize(self.neighbor.router_id)
+-
+-            self.send_ls_ack(
+-                lsu_lsa_headers
+-            )
+-
+-            if (
+-                self.local_lsa
+-                and self.neighbor.dbd_exchange_complete
+-                and not self.neighbor.request_list
+-                and not self.local_lsu_sent
+-            ):
+-                if self.local_lsa_rebuild_required:
+-                    if not self.local_lsa.reoriginate(
+-                        self.neighbor.router_id,
+-                        "neighbor session restarted"
+-                    ):
+-                        self.logger.warning(
+-                            "[OSPF][REORIGINATE] "
+-                            "failed after neighbor restart"
+-                        )
+-                        return
+-
+-                    self.local_lsa_rebuild_required = False
+-
+-                    self.logger.info(
+-                        "[OSPF][REORIGINATE] "
+-                        "local LSAs rebuilt after neighbor restart"
+-                    )
+-
+-                if self.send_local_ls_update():
+-                    self.local_lsu_sent = True
+-
+-    def handle_ospf_lsack(
+-        self,
+-        in_port,
+-        ipv6_pkt,
+-        ospf_data,
+-        pkt_len,
+-        router_id_text,
+-        area_id_text
+-    ):
+-        """
+-        Handles a received OSPFv3 Link State Acknowledgment packet.
+-        """
+-
+-        if self._reject_noncurrent_ospf_neighbor(
+-            in_port, ipv6_pkt, router_id_text
+-        ):
++        self.log_lsu(in_port, ipv6_pkt, pkt_len, router_id_text,
++                     area_id_text, received)
++        if not received:
+             return
+ 
++        self.neighbor.update_request_list(received)
++        own, remote = self._split_ospf_lsa_by_origin(received)
++        if own:
++            changed, recovered = self.local_lsa.recover_sequences(
++                own, prepare_next=not bool(self.local_lsa))
++            self.logger.info("[OSPF][SELF LSA] "
++                             "received=%d excluded-from-remote-lsdb", recovered)
++            if changed and self.local_lsa:
++                self.local_lsa_rebuild_required = True
++        if remote:
++            self.lsdb.update(remote)
++        if not self.local_lsa:
++            self.local_lsa.initialize(self.neighbor.router_id)
++        self.send_ls_ack(received)
++
++        if (self.local_lsa and self.neighbor.dbd_exchange_complete
++                and not self.neighbor.request_list and not self.local_lsu_sent):
++            if self.local_lsa_rebuild_required:
++                if not self.local_lsa.reoriginate(
++                        self.neighbor.router_id, "neighbor session restarted"):
++                    self.logger.warning("[OSPF][REORIGINATE] "
++                                        "failed after neighbor restart")
++                    return
++                self.local_lsa_rebuild_required = False
++                self.logger.info("[OSPF][REORIGINATE] "
++                                 "local LSAs rebuilt after neighbor restart")
++            if self.send_local_ls_update():
++                self.local_lsu_sent = True
++
++    def handle_ospf_lsack(self, in_port, ipv6_pkt, ospf_data,
++                          pkt_len, router_id_text, area_id_text):
++        if self._reject_noncurrent_ospf_neighbor(in_port, ipv6_pkt, router_id_text):
++            return
+         try:
+-            lsa_headers = parse_lsack(
+-                ospf_data,
+-                pkt_len
+-            )
++            headers = parse_lsack(ospf_data, pkt_len)
+         except ValueError as exc:
+-            self.logger.warning(
+-                "[OSPF][LSAck RX] %s",
+-                exc
+-            )
++            self.logger.warning("[OSPF][LSAck RX] %s", exc)
+             return
+ 
+-        self.logger.info(
+-            "[OSPF][LSAck RX] router=%s src=%s port=%s "
+-            "area=%s count=%d",
+-            router_id_text,
+-            ipv6_pkt.src,
+-            in_port,
+-            area_id_text,
+-            len(lsa_headers)
+-        )
+-
+-        acknowledged_count = 0
+-
+-        for lsa in lsa_headers:
+-            key = (
+-                lsa["ls_type"],
+-                lsa["link_state_id"],
+-                lsa["advertising_router"]
+-            )
+-
+-            local_lsa = self.local_lsa.get(key)
+-
+-            matched = (
+-                local_lsa is not None
+-                and local_lsa["ls_sequence"] == lsa["ls_sequence"]
+-                and local_lsa["ls_checksum"] == lsa["ls_checksum"]
+-            )
+-
+-            self.logger.info(
+-                "  -> %s adv=%s lsid=%s "
+-                "seq=0x%08x checksum=0x%04x local-match=%s",
+-                ospfv3_lsa_type_description(
+-                    lsa["ls_type"]
+-                ),
+-                lsa["advertising_router"],
+-                lsa["link_state_id"],
+-                lsa["ls_sequence"],
+-                lsa["ls_checksum"],
+-                matched
+-            )
+-
+-            pending_lsa = self.local_lsa_ack_pending.get(
+-                key
+-            )
+-
+-            pending_match = (
+-                pending_lsa is not None
+-                and pending_lsa["ls_sequence"]
+-                == lsa["ls_sequence"]
+-                and pending_lsa["ls_checksum"]
+-                == lsa["ls_checksum"]
+-            )
+-
+-            if pending_match:
++        self.logger.info("[OSPF][LSAck RX] router=%s src=%s count=%d",
++                         router_id_text, ipv6_pkt.src, len(headers))
++        accepted = 0
++        for lsa in headers:
++            key = (lsa["ls_type"], lsa["link_state_id"],
++                   lsa["advertising_router"])
++            pending = self.local_lsa_ack_pending.get(key)
++            if (pending is not None
++                    and pending["ls_sequence"] == lsa["ls_sequence"]
++                    and pending["ls_checksum"] == lsa["ls_checksum"]):
+                 del self.local_lsa_ack_pending[key]
+-                acknowledged_count += 1
+-
+-                self.logger.info(
+-                    "[OSPF][LSAck] acknowledged %s "
+-                    "adv=%s lsid=%s pending=%d",
+-                    ospfv3_lsa_type_description(
+-                        lsa["ls_type"]
+-                    ),
+-                    lsa["advertising_router"],
+-                    lsa["link_state_id"],
+-                    len(self.local_lsa_ack_pending)
+-                )
+-
+-        if (
+-            acknowledged_count > 0
+-            and not self.local_lsa_ack_pending
+-        ):
++                accepted += 1
++                self.logger.info("[OSPF][LSAck] acknowledged type=0x%04x "
++                                 "adv=%s lsid=%s pending=%d",
++                                 lsa["ls_type"], lsa["advertising_router"],
++                                 lsa["link_state_id"],
++                                 len(self.local_lsa_ack_pending))
++        if accepted and not self.local_lsa_ack_pending:
+             self.local_lsu_last_tx = None
+-
+-            self.logger.info(
+-                "[OSPF][LSAck] all local LSAs acknowledged"
+-            )
++            self.logger.info("[OSPF][LSAck] all local LSAs acknowledged")
+diff --git a/ospfv3/controller_timers.py b/ospfv3/controller_timers.py
+index d9108ac..5a37527 100644
+--- a/ospfv3/controller_timers.py
++++ b/ospfv3/controller_timers.py
+@@ -46,22 +46,9 @@ class OSPFTimerMixin:
+                     cfg.ROUTER_ID
+                 )
+ 
+-                # Rebuild routing before clearing transit data.
+-                # This also removes stale route-derived
+-                # OpenFlow entries.
+-                self.recompute_routing_state()
+-
+-                dead_transit_port = (
+-                    self.data_plane.transit_port
+-                )
+-
+-                for host_ipv6 in list(
+-                    self.data_plane.lan_hosts
+-                ):
+-                    self.delete_ipv6_reverse_flow(
+-                        host_ipv6,
+-                        dead_transit_port
+-                    )
++                # R1 itself disappeared: remove both directions, including
++                # global-unicast egress rules, before resetting its MAC/port.
++                self.withdraw_all_ipv6_host_flows()
+ 
+                 # The OSPF next-hop is no longer valid.
+                 self.data_plane.reset_transit()
+@@ -84,9 +71,8 @@ class OSPFTimerMixin:
+             hub.sleep(5)
+             if self.lsdb and self.lsdb.purge_expired():
+                 self.logger.info(
+-                    "[OSPF][ROUTING] LSDB expiration triggered SPF"
++                    "[OSPF][LSDB] expired remote records removed"
+                 )
+-                self.recompute_routing_state()
+ 
+     def local_lsa_retransmission_loop(self):
+         """
+diff --git a/ospfv3/controller_tx.py b/ospfv3/controller_tx.py
+index 884a0b1..0bfe7bf 100644
+--- a/ospfv3/controller_tx.py
++++ b/ospfv3/controller_tx.py
+@@ -1,54 +1,30 @@
+-"""Transmit-side OSPFv3 operations and local LSA origination.
+-
+-Mixin sends Hello/DBD/LSR/LSU/LSAck and handles DBD exchange resets.
+-It uses RyuApp-owned neighbor and local-LSA state through ``self``.
+-"""
++"""Minimal OSPFv3 Hello/DBD/LSR/LSU/LSAck transmission and retransmission."""
+ 
+ import struct
+ import time
+ 
+ from ospfv3.lsa import ospfv3_lsa_type_description
+-from ospfv3.packet import (
+-    build_ospfv3_hello_frame,
+-    build_ospfv3_dbd_frame,
+-    build_ospfv3_lsr_frame,
+-    build_ospfv3_lsu_frame,
+-    build_ospfv3_lsack_frame,
+-)
++from ospfv3.packet import (build_ospfv3_hello_frame, build_ospfv3_dbd_frame,
++                           build_ospfv3_lsr_frame, build_ospfv3_lsu_frame,
++                           build_ospfv3_lsack_frame)
+ 
+ 
+ class OSPFTransmitMixin:
+-    """OSPF Hello/DBD/LSR/LSU/LSAck transmission and local recovery."""
+-
+     def send_ospfv3_hello(self, neighbors=None):
+         if self.neighbor.port is None:
+             return
+-
+         if neighbors is None:
+             neighbors = self.neighbor.router_ids
+-
+-        frame = build_ospfv3_hello_frame(
+-            neighbors
+-        )
+-
+-        if not self.send_frame(
+-            frame,
+-            self.neighbor.port
+-        ):
++        frame = build_ospfv3_hello_frame(neighbors)
++        if not self.send_frame(frame, self.neighbor.port):
+             return
+-
+-        self.logger.info(
+-            "[OSPF][HELLO TX] port=%s neighbors=%s",
+-            self.neighbor.port,
+-            neighbors
+-        )
++        self.logger.info("[OSPF][HELLO TX] port=%s neighbors=%s",
++                         self.neighbor.port, neighbors)
+ 
+     def _ospf_unicast_ready(self):
+-        return (
+-            self.neighbor.port is not None
+-            and self.neighbor.ipv6 is not None
+-            and self.neighbor.mac is not None
+-        )
++        return (self.neighbor.port is not None
++                and self.neighbor.ipv6 is not None
++                and self.neighbor.mac is not None)
+ 
+     def _build_ospf_unicast_frame(self, builder, payload):
+         return builder(payload, self.neighbor.ipv6, self.neighbor.mac)
+@@ -56,262 +32,120 @@ class OSPFTransmitMixin:
+     def _send_dbd_frame(self, flags):
+         if self.neighbor.port is None:
+             return False
+-
+-        frame = build_ospfv3_dbd_frame(
+-            self.neighbor.dbd_sequence,
+-            flags=flags
+-        )
++        frame = build_ospfv3_dbd_frame(self.neighbor.dbd_sequence, flags=flags)
+         return self.send_frame(frame, self.neighbor.port)
+ 
+     def send_initial_dbd(self):
+         if not self._send_dbd_frame(0x07):
+             return
+-
+-        self.logger.info(
+-            "[OSPF][DBD TX] initial "
+-            "seq=0x%08x flags=I,M,MS",
+-            self.neighbor.dbd_sequence
+-        )
++        self.logger.info("[OSPF][DBD TX] initial seq=0x%08x flags=I,M,MS",
++                         self.neighbor.dbd_sequence)
+ 
+     def send_exchange_dbd(self):
+         if not self._send_dbd_frame(0x01):
+             return
+-
+-        self.logger.info(
+-            "[OSPF][DBD TX] exchange "
+-            "seq=0x%08x flags=MS",
+-            self.neighbor.dbd_sequence
+-        )
++        self.logger.info("[OSPF][DBD TX] exchange seq=0x%08x flags=MS",
++                         self.neighbor.dbd_sequence)
+ 
+     def reset_dbd_state(self, reason):
+         self.neighbor.reset_exchange()
+-
+         self.local_lsa_ack_pending = {}
+         self.local_lsu_last_tx = None
+         self.local_lsu_sent = False
+-
+-        self.logger.warning(
+-            "[OSPF][DBD] state reset reason=%s "
+-            "new-seq=0x%08x",
+-            reason,
+-            self.neighbor.dbd_sequence
+-        )
++        self.logger.warning("[OSPF][DBD] state reset reason=%s new-seq=0x%08x",
++                            reason, self.neighbor.dbd_sequence)
+ 
+     def send_link_state_request(self):
+         if not self._ospf_unicast_ready():
+             return
+-
+         if not self.neighbor.request_list:
+-            self.logger.info(
+-                "[OSPF][LSR] no LSAs to request"
+-            )
++            self.logger.info("[OSPF][LSR] no LSAs to request")
+             return
+-
+         frame = self._build_ospf_unicast_frame(
+-            build_ospfv3_lsr_frame, self.neighbor.request_list
+-        )
+-
+-        if not self.send_frame(
+-            frame,
+-            self.neighbor.port
+-        ):
++            build_ospfv3_lsr_frame, self.neighbor.request_list)
++        if not self.send_frame(frame, self.neighbor.port):
+             return
+-
+         self.neighbor.lsr_sent = True
+-
+-        self.logger.info(
+-            "[OSPF][LSR TX] to=%s count=%d",
+-            self.neighbor.ipv6,
+-            len(self.neighbor.request_list)
+-        )
+-
++        self.logger.info("[OSPF][LSR TX] to=%s count=%d",
++                         self.neighbor.ipv6, len(self.neighbor.request_list))
+         for lsa in self.neighbor.request_list:
+-            self.logger.info(
+-                "  -> %s adv=%s lsid=%s",
+-                ospfv3_lsa_type_description(
+-                    lsa["ls_type"]
+-                ),
+-                lsa["advertising_router"],
+-                lsa["link_state_id"]
+-            )
++            self.logger.info("  -> %s adv=%s lsid=%s",
++                             ospfv3_lsa_type_description(lsa["ls_type"]),
++                             lsa["advertising_router"], lsa["link_state_id"])
+ 
+     def send_ls_ack(self, lsa_headers):
+-        if not self._ospf_unicast_ready():
++        if not self._ospf_unicast_ready() or not lsa_headers:
+             return
+-
+-        if not lsa_headers:
+-            return
+-
+         frame = self._build_ospf_unicast_frame(
+-            build_ospfv3_lsack_frame, lsa_headers
+-        )
+-
+-        if not self.send_frame(
+-            frame,
+-            self.neighbor.port
+-        ):
++            build_ospfv3_lsack_frame, lsa_headers)
++        if not self.send_frame(frame, self.neighbor.port):
+             return
+-
+-        self.logger.info(
+-            "[OSPF][LSAck TX] to=%s count=%d",
+-            self.neighbor.ipv6,
+-            len(lsa_headers)
+-        )
++        self.logger.info("[OSPF][LSAck TX] to=%s count=%d",
++                         self.neighbor.ipv6, len(lsa_headers))
+ 
+     def send_local_ls_update(self):
+-        """
+-        Sends all locally originated LSAs to the OSPF neighbor
+-        in a single Link State Update packet.
+-        """
+-
+         if not self._ospf_unicast_ready():
+             return False
+-
+-        lsu_body = self.local_lsa.build_update_body()
+-
+-        if lsu_body is None:
++        body = self.local_lsa.build_update_body()
++        if body is None:
+             return False
+-
+-        frame = self._build_ospf_unicast_frame(
+-            build_ospfv3_lsu_frame, lsu_body
+-        )
+-
++        frame = self._build_ospf_unicast_frame(build_ospfv3_lsu_frame, body)
+         self.local_lsa_ack_pending = {
+-            key: {
+-                "ls_sequence": lsa["ls_sequence"],
+-                "ls_checksum": lsa["ls_checksum"]
+-            }
++            key: {"ls_sequence": lsa["ls_sequence"],
++                  "ls_checksum": lsa["ls_checksum"]}
+             for key, lsa in self.local_lsa.items()
+         }
+-
+-        if not self.send_frame(
+-            frame,
+-            self.neighbor.port
+-        ):
++        if not self.send_frame(frame, self.neighbor.port):
+             self.local_lsa_ack_pending = {}
+             self.local_lsu_last_tx = None
+             return False
+-
+         self.local_lsu_last_tx = time.monotonic()
+-
+-        self.logger.info(
+-            "[OSPF][LSU TX] to=%s lsas=%d "
+-            "frame-length=%d pending-acks=%d",
+-            self.neighbor.ipv6,
+-            len(self.local_lsa),
+-            len(frame),
+-            len(self.local_lsa_ack_pending)
+-        )
+-
++        self.logger.info("[OSPF][LSU TX] to=%s lsas=%d "
++                         "frame-length=%d pending-acks=%d",
++                         self.neighbor.ipv6, len(self.local_lsa), len(frame),
++                         len(self.local_lsa_ack_pending))
+         return True
+ 
+     def send_local_lsr_response(self, local_lsas):
+-        """
+-        Sends an LSU containing locally originated LSAs
+-        requested by the OSPF neighbor.
+-        """
+-
+-        if not self._ospf_unicast_ready():
++        if not self._ospf_unicast_ready() or not local_lsas:
+             return False
+-
+-        if not local_lsas:
++        body = struct.pack("!I", len(local_lsas)) + b"".join(
++            lsa["raw_lsa"] for lsa in local_lsas)
++        frame = self._build_ospf_unicast_frame(build_ospfv3_lsu_frame, body)
++        if not self.send_frame(frame, self.neighbor.port):
+             return False
+-
+-        lsu_body = (
+-            struct.pack(
+-                "!I",
+-                len(local_lsas)
+-            )
+-            + b"".join(
+-                lsa["raw_lsa"]
+-                for lsa in local_lsas
+-            )
+-        )
+-
+-        frame = self._build_ospf_unicast_frame(
+-            build_ospfv3_lsu_frame, lsu_body
+-        )
+-
+-        if not self.send_frame(
+-            frame,
+-            self.neighbor.port
+-        ):
+-            return False
+-
+-        self.logger.info(
+-            "[OSPF][LSR RESPONSE TX] to=%s "
+-            "lsas=%d frame-length=%d",
+-            self.neighbor.ipv6,
+-            len(local_lsas),
+-            len(frame)
+-        )
+-
++        self.logger.info("[OSPF][LSR RESPONSE TX] to=%s lsas=%d frame-length=%d",
++                         self.neighbor.ipv6, len(local_lsas), len(frame))
+         for lsa in local_lsas:
+-            self.logger.info(
+-                "  -> %s adv=%s lsid=%s "
+-                "seq=0x%08x checksum=0x%04x",
+-                ospfv3_lsa_type_description(
+-                    lsa["ls_type"]
+-                ),
+-                lsa["advertising_router"],
+-                lsa["link_state_id"],
+-                lsa["ls_sequence"],
+-                lsa["ls_checksum"]
+-            )
+-
++            self.logger.info("  -> %s adv=%s lsid=%s "
++                             "seq=0x%08x checksum=0x%04x",
++                             ospfv3_lsa_type_description(lsa["ls_type"]),
++                             lsa["advertising_router"], lsa["link_state_id"],
++                             lsa["ls_sequence"], lsa["ls_checksum"])
+         return True
+ 
+     def send_local_lsa_retransmission(self):
+-        """
+-        Retransmits locally originated LSAs that have not yet
+-        been acknowledged by the OSPF neighbor.
+-        """
+-
+         if not self._ospf_unicast_ready():
+             return False
+-
+         result = self.local_lsa.build_pending_body(self.local_lsa_ack_pending)
+-
+         if result is None:
+             return False
+-
+-        lsu_body, lsa_count = result
+-
+-        frame = self._build_ospf_unicast_frame(
+-            build_ospfv3_lsu_frame, lsu_body
+-        )
+-
+-        if not self.send_frame(
+-            frame,
+-            self.neighbor.port
+-        ):
++        body, count = result
++        frame = self._build_ospf_unicast_frame(build_ospfv3_lsu_frame, body)
++        if not self.send_frame(frame, self.neighbor.port):
+             return False
+-
+         self.local_lsu_last_tx = time.monotonic()
+-
+-        self.logger.info(
+-            "[OSPF][LSU RETX] to=%s lsas=%d "
+-            "frame-length=%d pending-acks=%d",
+-            self.neighbor.ipv6,
+-            lsa_count,
+-            len(frame),
+-            len(self.local_lsa_ack_pending)
+-        )
+-
++        self.logger.info("[OSPF][LSU RETX] to=%s lsas=%d "
++                         "frame-length=%d pending-acks=%d",
++                         self.neighbor.ipv6, count, len(frame),
++                         len(self.local_lsa_ack_pending))
+         return True
+ 
+     def reoriginate_local_lsas(self, reason):
+         if self.local_lsa_ack_pending:
+-            self.logger.warning(
+-                "[OSPF][REORIGINATE] postponed - "
+-                "previous local LSAs are still awaiting acknowledgment"
+-            )
++            self.logger.warning("[OSPF][REORIGINATE] postponed - "
++                                "previous local LSAs are still awaiting acknowledgment")
+             return False
+-
+-        if not self.local_lsa.reoriginate(
+-            self.neighbor.router_id,
+-            reason
+-        ):
++        if not self.local_lsa.reoriginate(self.neighbor.router_id, reason):
+             return False
+-
+         return self.send_local_ls_update()
+diff --git a/ospfv3/local_lsa.py b/ospfv3/local_lsa.py
+index ec7c932..d20ccf5 100644
+--- a/ospfv3/local_lsa.py
++++ b/ospfv3/local_lsa.py
+@@ -1,33 +1,23 @@
++"""Originate and retransmit the three local OSPFv3 LSAs advertised to FRR."""
++
+ import ipaddress
+ import socket
+ import struct
+ import time
+ 
+ from scapy.contrib.ospf import (
+-    OSPFv3_Intra_Area_Prefix_LSA,
+-    OSPFv3_Link,
+-    OSPFv3_Link_LSA,
+-    OSPFv3_LSA_Hdr,
+-    OSPFv3_Prefix_Item,
+-    OSPFv3_Router_LSA,
+-)
+-
++    OSPFv3_Intra_Area_Prefix_LSA, OSPFv3_Link, OSPFv3_Link_LSA,
++    OSPFv3_LSA_Hdr, OSPFv3_Prefix_Item, OSPFv3_Router_LSA)
+ from ospfv3 import config as cfg
+ from ospfv3.packet import encode_ospfv3_lsu_body
+-from ospfv3.lsa import (
+-    next_ospfv3_lsa_sequence,
+-    ospfv3_lsa_type_description,
+-    lsa_sequence_signed,
+-)
++from ospfv3.lsa import (next_ospfv3_lsa_sequence,
++                        ospfv3_lsa_type_description, lsa_sequence_signed)
+ 
+ 
+ class LocalLSA:
+     def __init__(self, lsdb, logger):
+-        self.lsdb = lsdb
+-        self.logger = logger
+-
++        self.lsdb, self.logger = lsdb, logger
+         self.entries = {}
+-
+         self.router_sequence = cfg.INITIAL_SEQUENCE
+         self.link_sequence = cfg.INITIAL_SEQUENCE
+         self.prefix_sequence = cfg.INITIAL_SEQUENCE
+@@ -50,415 +40,190 @@ class LocalLSA:
+     def clear(self):
+         self.entries.clear()
+ 
+-    def recover_sequences(
+-        self,
+-        lsa_headers,
+-        prepare_next
+-    ):
+-        """
+-        Recovers sequence state from self-originated LSA summaries
+-        learned from an OSPF neighbor.
+-
+-        When local LSAs do not exist yet, prepare_next=True makes
+-        the next locally originated instance newer than the copy
+-        stored by the neighbor.
+-
+-        When local LSAs already exist, prepare_next=False only moves
+-        the sequence floor forward. A later reorigination performs
+-        the actual increment.
+-        """
+-
++    def recover_sequences(self, lsa_headers, prepare_next):
++        # A peer may retain newer self-originated LSAs after Ryu restarts.
+         interface_lsid = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
+-
+-        changed = False
+-        recovered = 0
+-
++        changed, recovered = False, 0
+         for lsa in lsa_headers:
+-            if (
+-                lsa["advertising_router"]
+-                != cfg.ROUTER_ID
+-            ):
++            if lsa["advertising_router"] != cfg.ROUTER_ID:
+                 continue
+-
+-            sequence_attribute = None
+-
+-            if (
+-                lsa["ls_type"] == 0x2001
+-                and lsa["link_state_id"] == "0.0.0.0"
+-            ):
+-                sequence_attribute = "router_sequence"
+-
+-            elif (
+-                lsa["ls_type"] == 0x0008
+-                and lsa["link_state_id"] == interface_lsid
+-            ):
+-                sequence_attribute = "link_sequence"
+-
+-            elif (
+-                lsa["ls_type"] == 0x2009
+-                and lsa["link_state_id"] == "0.0.0.0"
+-            ):
+-                sequence_attribute = "prefix_sequence"
+-
+-            if sequence_attribute is None:
++            attribute = None
++            if lsa["ls_type"] == 0x2001 and lsa["link_state_id"] == "0.0.0.0":
++                attribute = "router_sequence"
++            elif lsa["ls_type"] == 0x0008 and lsa["link_state_id"] == interface_lsid:
++                attribute = "link_sequence"
++            elif lsa["ls_type"] == 0x2009 and lsa["link_state_id"] == "0.0.0.0":
++                attribute = "prefix_sequence"
++            if attribute is None:
+                 continue
+-
+-            observed_sequence = lsa["ls_sequence"]
+-            candidate_sequence = observed_sequence
+-
++            observed = lsa["ls_sequence"]
++            candidate = observed
+             if prepare_next:
+                 try:
+-                    candidate_sequence = (
+-                        next_ospfv3_lsa_sequence(
+-                            observed_sequence
+-                        )
+-                    )
++                    candidate = next_ospfv3_lsa_sequence(observed)
+                 except ValueError as exc:
+-                    self.logger.warning(
+-                        "[OSPF][SELF LSA] "
+-                        "cannot recover sequence: %s",
+-                        exc
+-                    )
++                    self.logger.warning("[OSPF][SELF LSA] cannot recover sequence: %s",
++                                        exc)
+                     continue
+-
+-            current_sequence = getattr(
+-                self,
+-                sequence_attribute
+-            )
+-
+-            if (
+-                lsa_sequence_signed(candidate_sequence)
+-                > lsa_sequence_signed(current_sequence)
+-            ):
+-                setattr(
+-                    self,
+-                    sequence_attribute,
+-                    candidate_sequence
+-                )
+-
++            if lsa_sequence_signed(candidate) > lsa_sequence_signed(
++                    getattr(self, attribute)):
++                setattr(self, attribute, candidate)
+                 changed = True
+-
+             recovered += 1
+-
+-            self.logger.info(
+-                "[OSPF][SELF LSA] recovered "
+-                "type=0x%04x lsid=%s "
+-                "observed=0x%08x prepared=0x%08x",
+-                lsa["ls_type"],
+-                lsa["link_state_id"],
+-                observed_sequence,
+-                getattr(
+-                    self,
+-                    sequence_attribute
+-                )
+-            )
+-
++            self.logger.info("[OSPF][SELF LSA] recovered "
++                             "type=0x%04x lsid=%s observed=0x%08x prepared=0x%08x",
++                             lsa["ls_type"], lsa["link_state_id"], observed,
++                             getattr(self, attribute))
+         return changed, recovered
+ 
+     def get_neighbor_interface_id(self, neighbor_router_id):
+         if neighbor_router_id is None:
+             return None
+-
+-        local_interface_id = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
+-
++        local_id = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
+         for lsa in self.lsdb.values():
+             if lsa["ls_type"] != 0x2001:
+                 continue
+-
+             if lsa["advertising_router"] != neighbor_router_id:
+                 continue
+-
+             router_lsa = lsa.get("router_lsa")
+-
+             if router_lsa is None:
+                 continue
+-
+             for link in router_lsa["links"]:
+                 if link["type"] != 1:
+                     continue
+-
+                 if link["neighbor_router_id"] != cfg.ROUTER_ID:
+                     continue
+-
+-                if link["neighbor_interface_id"] != local_interface_id:
++                if link["neighbor_interface_id"] != local_id:
+                     continue
+-
+-                return struct.unpack(
+-                    "!I",
+-                    socket.inet_aton(link["interface_id"])
+-                )[0]
+-
++                return struct.unpack("!I", socket.inet_aton(link["interface_id"]))[0]
+         return None
+ 
+     @staticmethod
+     def _prefix_item(prefix, length, metric):
+         network = ipaddress.IPv6Network(f"{prefix}/{length}", strict=False)
+         return OSPFv3_Prefix_Item(
+-            prefixlen=length,
+-            prefixoptions=0,
+-            metric=metric,
+-            prefix=f"{network.network_address}/{length}",
+-        )
++            prefixlen=length, prefixoptions=0, metric=metric,
++            prefix=f"{network.network_address}/{length}")
+ 
+     def build_router(self, neighbor_router_id):
+         if neighbor_router_id is None:
+-            self.logger.warning(
+-                "[OSPF][LOCAL LSA] cannot build Router-LSA: "
+-                "neighbor Router ID is unknown"
+-            )
++            self.logger.warning("[OSPF][LOCAL LSA] cannot build Router-LSA: "
++                                "neighbor Router ID is unknown")
+             return None
+-
+-        neighbor_interface_id = self.get_neighbor_interface_id(
+-            neighbor_router_id
+-        )
+-
++        neighbor_interface_id = self.get_neighbor_interface_id(neighbor_router_id)
+         if neighbor_interface_id is None:
+-            self.logger.warning(
+-                "[OSPF][LOCAL LSA] cannot build Router-LSA: "
+-                "neighbor Interface ID is unknown"
+-            )
++            self.logger.warning("[OSPF][LOCAL LSA] cannot build Router-LSA: "
++                                "neighbor Interface ID is unknown")
+             return None
+-
+         lsa = OSPFv3_Router_LSA(
+-            age=0,
+-            type=0x2001,
+-            id="0.0.0.0",
+-            adrouter=cfg.ROUTER_ID,
+-            seq=self.router_sequence,
+-            flags=0,
+-            options=cfg.OPTIONS,
+-            linklist=[
+-                OSPFv3_Link(
+-                    type=1,
+-                    reserved=0,
+-                    metric=cfg.INTERFACE_COST,
+-                    intid=cfg.INTERFACE_ID,
+-                    neighintid=neighbor_interface_id,
+-                    neighbor=neighbor_router_id,
+-                )
+-            ],
+-        )
+-
++            age=0, type=0x2001, id="0.0.0.0", adrouter=cfg.ROUTER_ID,
++            seq=self.router_sequence, flags=0, options=cfg.OPTIONS,
++            linklist=[OSPFv3_Link(
++                type=1, reserved=0, metric=cfg.INTERFACE_COST,
++                intid=cfg.INTERFACE_ID, neighintid=neighbor_interface_id,
++                neighbor=neighbor_router_id)])
+         return bytes(lsa)
+ 
+     def build_prefix(self):
+         lsa = OSPFv3_Intra_Area_Prefix_LSA(
+-            age=0,
+-            type=0x2009,
+-            id="0.0.0.0",
+-            adrouter=cfg.ROUTER_ID,
+-            seq=self.prefix_sequence,
+-            prefixes=1,
+-            reflstype=0x2001,
+-            reflsid="0.0.0.0",
+-            refadrouter=cfg.ROUTER_ID,
++            age=0, type=0x2009, id="0.0.0.0", adrouter=cfg.ROUTER_ID,
++            seq=self.prefix_sequence, prefixes=1, reflstype=0x2001,
++            reflsid="0.0.0.0", refadrouter=cfg.ROUTER_ID,
+             prefixlist=[self._prefix_item(
+-                cfg.LAN_PREFIX, cfg.LAN_PREFIX_LEN, cfg.LAN_PREFIX_METRIC
+-            )],
+-        )
+-
++                cfg.LAN_PREFIX, cfg.LAN_PREFIX_LEN, cfg.LAN_PREFIX_METRIC)])
+         return bytes(lsa)
+ 
+     def build_link(self):
+         interface_lsid = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
+-
+         lsa = OSPFv3_Link_LSA(
+-            age=0,
+-            type=0x0008,
+-            id=interface_lsid,
+-            adrouter=cfg.ROUTER_ID,
+-            seq=self.link_sequence,
+-            prio=cfg.ROUTER_PRIORITY,
+-            options=cfg.OPTIONS,
+-            lladdr=cfg.LINK_LOCAL,
+-            prefixes=1,
++            age=0, type=0x0008, id=interface_lsid, adrouter=cfg.ROUTER_ID,
++            seq=self.link_sequence, prio=cfg.ROUTER_PRIORITY,
++            options=cfg.OPTIONS, lladdr=cfg.LINK_LOCAL, prefixes=1,
+             prefixlist=[self._prefix_item(
+-                cfg.TRANSIT_PREFIX, cfg.TRANSIT_PREFIX_LEN, 0
+-            )],
+-        )
+-
++                cfg.TRANSIT_PREFIX, cfg.TRANSIT_PREFIX_LEN, 0)])
+         return bytes(lsa)
+ 
+     def install(self, raw_lsa):
+         if len(raw_lsa) < 20:
+-            raise ValueError(
+-                "Local LSA is too short"
+-            )
+-
+-        # Decode only the fixed header; keep the original body unmodified.
++            raise ValueError("Local LSA is too short")
++        # Preserve the original serialized LSA; only the fixed header is read.
+         header = OSPFv3_LSA_Hdr(bytes(raw_lsa[:20]))
+         key = (header.type, header.id, header.adrouter)
+-
+         self.entries[key] = {
+-            "ls_age": header.age,
+-            "ls_type": header.type,
+-            "link_state_id": header.id,
+-            "advertising_router": header.adrouter,
+-            "ls_sequence": header.seq,
+-            "ls_checksum": header.chksum,
+-            "ls_length": header.len,
+-            "raw_lsa": raw_lsa,
+-            "_originated_at": time.monotonic()
+-        }
++            "ls_age": header.age, "ls_type": header.type,
++            "link_state_id": header.id, "advertising_router": header.adrouter,
++            "ls_sequence": header.seq, "ls_checksum": header.chksum,
++            "ls_length": header.len, "raw_lsa": raw_lsa,
++            "_originated_at": time.monotonic()}
+ 
+     def initialize(self, neighbor_router_id):
+         if self.entries:
+             return True
+-
+-        if self.get_neighbor_interface_id(
+-            neighbor_router_id
+-        ) is None:
++        if self.get_neighbor_interface_id(neighbor_router_id) is None:
+             return False
+-
+-        router_lsa = self.build_router(
+-            neighbor_router_id
+-        )
+-
+-        if router_lsa is None:
++        router = self.build_router(neighbor_router_id)
++        if router is None:
+             return False
+-
+-        self.install(router_lsa)
++        self.install(router)
+         self.install(self.build_link())
+         self.install(self.build_prefix())
+-
+-        self.logger.info(
+-            "[OSPF][LOCAL LSDB] initialized entries=%d",
+-            len(self.entries)
+-        )
+-
+-        for _, lsa in sorted(
+-            self.entries.items(),
+-            key=lambda item: item[0]
+-        ):
+-            self.logger.info(
+-                "  -> %s adv=%s lsid=%s "
+-                "seq=0x%08x checksum=0x%04x length=%d",
+-                ospfv3_lsa_type_description(
+-                    lsa["ls_type"]
+-                ),
+-                lsa["advertising_router"],
+-                lsa["link_state_id"],
+-                lsa["ls_sequence"],
+-                lsa["ls_checksum"],
+-                lsa["ls_length"]
+-            )
+-
++        self.logger.info("[OSPF][LOCAL LSDB] initialized entries=%d",
++                         len(self.entries))
++        for _, lsa in sorted(self.entries.items(), key=lambda item: item[0]):
++            self.logger.info("  -> %s adv=%s lsid=%s "
++                             "seq=0x%08x checksum=0x%04x length=%d",
++                             ospfv3_lsa_type_description(lsa["ls_type"]),
++                             lsa["advertising_router"], lsa["link_state_id"],
++                             lsa["ls_sequence"], lsa["ls_checksum"],
++                             lsa["ls_length"])
+         return True
+ 
+     def build_update_body(self):
+         if not self.entries:
+             return None
+-
+-        lsas = [
+-            entry["raw_lsa"]
+-            for _, entry in sorted(
+-                self.entries.items(),
+-                key=lambda item: item[0]
+-            )
+-        ]
+-
++        lsas = [entry["raw_lsa"] for _, entry in sorted(
++            self.entries.items(), key=lambda item: item[0])]
+         return encode_ospfv3_lsu_body(lsas)
+ 
+     def build_pending_body(self, pending):
+         if not pending:
+             return None
+-
+         lsas = []
+-
+         for key in sorted(pending):
+-            local_lsa = self.entries.get(key)
+-            pending_lsa = pending[key]
+-
+-            if local_lsa is None:
++            local = self.entries.get(key)
++            expected = pending[key]
++            if local is None:
+                 continue
+-
+-            same_instance = (
+-                local_lsa["ls_sequence"]
+-                == pending_lsa["ls_sequence"]
+-                and local_lsa["ls_checksum"]
+-                == pending_lsa["ls_checksum"]
+-            )
+-
+-            if same_instance:
+-                lsas.append(
+-                    local_lsa["raw_lsa"]
+-                )
+-
++            if (local["ls_sequence"] == expected["ls_sequence"]
++                    and local["ls_checksum"] == expected["ls_checksum"]):
++                lsas.append(local["raw_lsa"])
+         if not lsas:
+             return None
+-
+         return encode_ospfv3_lsu_body(lsas), len(lsas)
+ 
+     def reoriginate(self, neighbor_router_id, reason):
+         if not self.entries:
+-            self.logger.warning(
+-                "[OSPF][REORIGINATE] local LSDB is empty"
+-            )
++            self.logger.warning("[OSPF][REORIGINATE] local LSDB is empty")
+             return False
+-
+-        if self.get_neighbor_interface_id(
+-            neighbor_router_id
+-        ) is None:
+-            self.logger.warning(
+-                "[OSPF][REORIGINATE] "
+-                "neighbor interface ID unavailable"
+-            )
++        if self.get_neighbor_interface_id(neighbor_router_id) is None:
++            self.logger.warning("[OSPF][REORIGINATE] neighbor interface ID unavailable")
+             return False
+-
+-        self.router_sequence = (
+-            next_ospfv3_lsa_sequence(
+-                self.router_sequence
+-            )
+-        )
+-
+-        self.link_sequence = (
+-            next_ospfv3_lsa_sequence(
+-                self.link_sequence
+-            )
+-        )
+-
+-        self.prefix_sequence = (
+-            next_ospfv3_lsa_sequence(
+-                self.prefix_sequence
+-            )
+-        )
+-
+-        router_lsa = self.build_router(
+-            neighbor_router_id
+-        )
+-
+-        if router_lsa is None:
++        self.router_sequence = next_ospfv3_lsa_sequence(self.router_sequence)
++        self.link_sequence = next_ospfv3_lsa_sequence(self.link_sequence)
++        self.prefix_sequence = next_ospfv3_lsa_sequence(self.prefix_sequence)
++        router = self.build_router(neighbor_router_id)
++        if router is None:
+             return False
+-
+-        link_lsa = self.build_link()
+-        prefix_lsa = self.build_prefix()
+-
++        link, prefix = self.build_link(), self.build_prefix()
+         self.entries.clear()
+-
+-        self.install(router_lsa)
+-        self.install(link_lsa)
+-        self.install(prefix_lsa)
+-
+-        self.logger.info(
+-            "[OSPF][REORIGINATE] reason=%s entries=%d",
+-            reason,
+-            len(self.entries)
+-        )
+-
+-        for _, lsa in sorted(
+-            self.entries.items(),
+-            key=lambda item: item[0]
+-        ):
+-            self.logger.info(
+-                "  -> %s adv=%s lsid=%s "
+-                "seq=0x%08x checksum=0x%04x",
+-                ospfv3_lsa_type_description(
+-                    lsa["ls_type"]
+-                ),
+-                lsa["advertising_router"],
+-                lsa["link_state_id"],
+-                lsa["ls_sequence"],
+-                lsa["ls_checksum"]
+-            )
+-
++        self.install(router)
++        self.install(link)
++        self.install(prefix)
++        self.logger.info("[OSPF][REORIGINATE] reason=%s entries=%d",
++                         reason, len(self.entries))
++        for _, lsa in sorted(self.entries.items(), key=lambda item: item[0]):
++            self.logger.info("  -> %s adv=%s lsid=%s seq=0x%08x checksum=0x%04x",
++                             ospfv3_lsa_type_description(lsa["ls_type"]),
++                             lsa["advertising_router"], lsa["link_state_id"],
++                             lsa["ls_sequence"], lsa["ls_checksum"])
+         return True
+diff --git a/ospfv3/lsa.py b/ospfv3/lsa.py
+index 6f135ee..9632649 100644
+--- a/ospfv3/lsa.py
++++ b/ospfv3/lsa.py
+@@ -1,85 +1,52 @@
++"""OSPFv3 LSA validation, decoding, checksums and signed sequence ordering."""
++
+ import struct
+ from ipaddress import IPv4Address, IPv6Interface
+ 
+ from scapy.contrib.ospf import (
+-    OSPFv3_Intra_Area_Prefix_LSA,
+-    OSPFv3_Link_LSA,
+-    OSPFv3_Router_LSA,
+-    ospf_lsa_checksum as _scapy_ospf_lsa_checksum,
+-)
+-
++    OSPFv3_Intra_Area_Prefix_LSA, OSPFv3_Link_LSA,
++    OSPFv3_Router_LSA, ospf_lsa_checksum as _scapy_ospf_lsa_checksum)
+ from ospfv3 import config as cfg
+ 
+ 
+ def ospfv3_lsa_type_description(ls_type):
+-    """Zwróć czytelną nazwę typu LSA oraz jego flooding scope."""
+-
+-    lsa_names = {
+-        0x2001: "Router-LSA",
+-        0x2002: "Network-LSA",
+-        0x2003: "Inter-Area-Prefix-LSA",
+-        0x2004: "Inter-Area-Router-LSA",
+-        0x4005: "AS-External-LSA",
+-        0x2007: "NSSA-LSA",
+-        0x0008: "Link-LSA",
+-        0x2009: "Intra-Area-Prefix-LSA",
+-    }
+-
+-    scope_names = {
+-        0x0000: "Link-local Scope",
+-        0x2000: "Area Scope",
+-        0x4000: "AS Scope",
+-        0x6000: "Reserved Scope",
+-    }
+-
+-    name = lsa_names.get(
+-        ls_type,
+-        f"Unknown-LSA(function={ls_type & 0x1fff})"
+-    )
+-
+-    scope = scope_names.get(
+-        ls_type & 0x6000,
+-        "Unknown Scope"
+-    )
+-
+-    return f"{name}, {scope}"
++    names = {
++        0x2001: "Router-LSA", 0x2002: "Network-LSA",
++        0x2003: "Inter-Area-Prefix-LSA", 0x2004: "Inter-Area-Router-LSA",
++        0x4005: "AS-External-LSA", 0x2007: "NSSA-LSA",
++        0x0008: "Link-LSA", 0x2009: "Intra-Area-Prefix-LSA"}
++    scopes = {0: "Link-local Scope", 0x2000: "Area Scope",
++              0x4000: "AS Scope", 0x6000: "Reserved Scope"}
++    name = names.get(ls_type, f"Unknown-LSA(function={ls_type & 0x1fff})")
++    return f"{name}, {scopes.get(ls_type & 0x6000, 'Unknown Scope')}"
+ 
+ 
+ def _check_lsa_header(raw_lsa, expected_type, min_length, name):
+     if len(raw_lsa) < min_length:
+         raise ValueError(f"{name} is too short: {len(raw_lsa)} B")
+-
+     lsa_type = int.from_bytes(raw_lsa[2:4], "big")
+     if lsa_type != expected_type:
+         raise ValueError(f"{name}: unexpected LS Type=0x{lsa_type:04x}")
+-
+     declared_length = int.from_bytes(raw_lsa[18:20], "big")
+     if declared_length != len(raw_lsa):
+-        raise ValueError(
+-            f"{name}: LS Length={declared_length}, "
+-            f"actual length={len(raw_lsa)}"
+-        )
++        raise ValueError(f"{name}: LS Length={declared_length}, "
++                         f"actual length={len(raw_lsa)}")
+ 
+ 
+ def _check_prefixes(raw_lsa, count, start, name):
+-    """Validate on-wire entry boundaries before Scapy decodes the list."""
+     end = len(raw_lsa)
+     if count > (end - start) // 4:
+         raise ValueError(f"{name}: prefix count exceeds available data")
+-
+     offset = start
+     for index in range(count):
+         if offset + 4 > end:
+             raise ValueError(f"{name}: insufficient data for prefix #{index + 1}")
+-
+-        prefix_length = raw_lsa[offset]
+-        if prefix_length > 128:
+-            raise ValueError(f"{name}: invalid prefix length {prefix_length}")
+-
+-        offset += 4 + ((prefix_length + 31) // 32) * 4
++        length = raw_lsa[offset]
++        if length > 128:
++            raise ValueError(f"{name}: invalid prefix length {length}")
++        offset += 4 + ((length + 31) // 32) * 4
+         if offset > end:
+             raise ValueError(f"{name}: prefix #{index + 1} exceeds LSA boundary")
+-
+     if offset != end:
+         raise ValueError(f"{name}: trailing bytes after prefix list")
+ 
+@@ -94,177 +61,100 @@ def _decode_lsa(lsa_class, raw_lsa, name):
+ def parse_ospfv3_router_lsa(raw_lsa):
+     name = "Router-LSA"
+     _check_lsa_header(raw_lsa, 0x2001, 24, name)
+-
+-    link_length = len(raw_lsa) - 24
+-    if link_length % 16:
+-        raise ValueError(
+-            f"{name}: link description section has invalid length {link_length} B"
+-        )
+-
++    length = len(raw_lsa) - 24
++    if length % 16:
++        raise ValueError(f"{name}: link description section has invalid length {length} B")
+     lsa = _decode_lsa(OSPFv3_Router_LSA, raw_lsa, name)
+-    if len(lsa.linklist) != link_length // 16:
++    if len(lsa.linklist) != length // 16:
+         raise ValueError(f"{name}: inconsistent link descriptions")
+-
+-    link_type_names = {
+-        1: "Point-to-Point",
+-        2: "Transit Network",
+-        3: "Reserved",
+-        4: "Virtual Link",
+-    }
+-
+-    links = [
+-        {
+-            "type": link.type,
+-            "type_name": link_type_names.get(link.type, "Unknown"),
+-            "reserved": link.reserved,
+-            "metric": link.metric,
+-            "interface_id": str(IPv4Address(link.intid)),
+-            "neighbor_interface_id": str(IPv4Address(link.neighintid)),
+-            "neighbor_router_id": link.neighbor,
+-        }
+-        for link in lsa.linklist
+-    ]
+-
+-    return {
+-        "flags": int(lsa.flags),
+-        "options": int(lsa.options),
+-        "links": links,
+-    }
++    types = {1: "Point-to-Point", 2: "Transit Network",
++             3: "Reserved", 4: "Virtual Link"}
++    return {"flags": int(lsa.flags), "options": int(lsa.options),
++            "links": [{"type": link.type,
++                       "type_name": types.get(link.type, "Unknown"),
++                       "reserved": link.reserved, "metric": link.metric,
++                       "interface_id": str(IPv4Address(link.intid)),
++                       "neighbor_interface_id": str(IPv4Address(link.neighintid)),
++                       "neighbor_router_id": link.neighbor}
++                      for link in lsa.linklist]}
+ 
+ 
+ def parse_ospfv3_link_lsa(raw_lsa):
+     name = "Link-LSA"
+     _check_lsa_header(raw_lsa, 0x0008, 44, name)
+-
+-    prefix_count = int.from_bytes(raw_lsa[40:44], "big")
+-    _check_prefixes(raw_lsa, prefix_count, 44, name)
+-
++    count = int.from_bytes(raw_lsa[40:44], "big")
++    _check_prefixes(raw_lsa, count, 44, name)
+     lsa = _decode_lsa(OSPFv3_Link_LSA, raw_lsa, name)
+-    if len(lsa.prefixlist) != prefix_count:
++    if len(lsa.prefixlist) != count:
+         raise ValueError(f"{name}: inconsistent prefix count")
+-
+-    prefixes = [
+-        {
+-            "prefix_length": item.prefixlen,
+-            "prefix_options": int(item.prefixoptions),
+-            # Scapy reuses the Prefix Item's metric field for this reserved word.
+-            "reserved": item.metric,
+-            "prefix": str(IPv6Interface(item.prefix).ip),
+-        }
+-        for item in lsa.prefixlist
+-    ]
+-
+-    return {
+-        "router_priority": lsa.prio,
+-        "options": int(lsa.options),
+-        "link_local_address": lsa.lladdr,
+-        "number_of_prefixes": lsa.prefixes,
+-        "prefixes": prefixes,
+-    }
++    return {"router_priority": lsa.prio, "options": int(lsa.options),
++            "link_local_address": lsa.lladdr,
++            "number_of_prefixes": lsa.prefixes,
++            "prefixes": [{"prefix_length": item.prefixlen,
++                          "prefix_options": int(item.prefixoptions),
++                          "reserved": item.metric,
++                          "prefix": str(IPv6Interface(item.prefix).ip)}
++                         for item in lsa.prefixlist]}
+ 
+ 
+ def parse_ospfv3_intra_area_prefix_lsa(raw_lsa):
+     name = "Intra-Area-Prefix-LSA"
+     _check_lsa_header(raw_lsa, 0x2009, 32, name)
+-
+-    prefix_count = int.from_bytes(raw_lsa[20:22], "big")
+-    _check_prefixes(raw_lsa, prefix_count, 32, name)
+-
++    count = int.from_bytes(raw_lsa[20:22], "big")
++    _check_prefixes(raw_lsa, count, 32, name)
+     lsa = _decode_lsa(OSPFv3_Intra_Area_Prefix_LSA, raw_lsa, name)
+-    if len(lsa.prefixlist) != prefix_count:
++    if len(lsa.prefixlist) != count:
+         raise ValueError(f"{name}: inconsistent prefix count")
++    return {"number_of_prefixes": lsa.prefixes,
++            "referenced_ls_type": lsa.reflstype,
++            "referenced_link_state_id": lsa.reflsid,
++            "referenced_advertising_router": lsa.refadrouter,
++            "prefixes": [{"prefix": str(IPv6Interface(item.prefix).ip),
++                          "prefix_length": item.prefixlen,
++                          "prefix_options": int(item.prefixoptions),
++                          "metric": item.metric}
++                         for item in lsa.prefixlist]}
+ 
+-    prefixes = [
+-        {
+-            "prefix": str(IPv6Interface(item.prefix).ip),
+-            "prefix_length": item.prefixlen,
+-            "prefix_options": int(item.prefixoptions),
+-            "metric": item.metric,
+-        }
+-        for item in lsa.prefixlist
+-    ]
+-
+-    return {
+-        "number_of_prefixes": lsa.prefixes,
+-        "referenced_ls_type": lsa.reflstype,
+-        "referenced_link_state_id": lsa.reflsid,
+-        "referenced_advertising_router": lsa.refadrouter,
+-        "prefixes": prefixes,
+-    }
+ 
+ def lsa_sequence_signed(sequence):
+-    """
+-    LS Sequence Number w OSPF jest porownywany jako signed 32-bit.
+-    """
+-    return struct.unpack(
+-        "!i",
+-        struct.pack("!I", sequence)
+-    )[0]
++    return struct.unpack("!i", struct.pack("!I", sequence))[0]
+ 
+ 
+ def compare_lsa_instances(first, second):
+-    """Compare signed sequence, checksum, MaxAge and LS Age, in that order.
+-
+-    Return 1 when first is newer, -1 when second is newer, otherwise 0.
+-    """
+-    first_seq = lsa_sequence_signed(first["ls_sequence"])
+-    second_seq = lsa_sequence_signed(second["ls_sequence"])
+-    if first_seq != second_seq:
+-        return 1 if first_seq > second_seq else -1
+-
+-    first_checksum = first["ls_checksum"]
+-    second_checksum = second["ls_checksum"]
+-    if first_checksum != second_checksum:
+-        return 1 if first_checksum > second_checksum else -1
+-
+-    first_age = first["ls_age"]
+-    second_age = second["ls_age"]
+-    if first_age == cfg.MAX_AGE and second_age != cfg.MAX_AGE:
++    a = lsa_sequence_signed(first["ls_sequence"])
++    b = lsa_sequence_signed(second["ls_sequence"])
++    if a != b:
++        return 1 if a > b else -1
++    a, b = first["ls_checksum"], second["ls_checksum"]
++    if a != b:
++        return 1 if a > b else -1
++    a, b = first["ls_age"], second["ls_age"]
++    if a == cfg.MAX_AGE and b != cfg.MAX_AGE:
+         return 1
+-    if second_age == cfg.MAX_AGE and first_age != cfg.MAX_AGE:
++    if b == cfg.MAX_AGE and a != cfg.MAX_AGE:
+         return -1
+-    if abs(first_age - second_age) > cfg.MAX_AGE_DIFF:
+-        return 1 if first_age < second_age else -1
++    if abs(a - b) > cfg.MAX_AGE_DIFF:
++        return 1 if a < b else -1
+     return 0
+ 
+ 
+ def ospfv3_lsa_checksum(lsa_bytes):
+-    """Return the OSPFv3 LSA Fletcher checkbytes as a 16-bit integer.
+-
+-    Scapy excludes LS Age; its Fletcher checkbytes helper zeros bytes 16–17.
+-    """
+     if len(lsa_bytes) < 20:
+         raise ValueError("LSA is too short for checksum calculation")
+     return int.from_bytes(_scapy_ospf_lsa_checksum(bytes(lsa_bytes)), "big")
+ 
+ 
+ def next_ospfv3_lsa_sequence(sequence):
+-    """
+-    Returns the next valid OSPF LSA sequence number.
+-
+-    Sequence numbers are stored as unsigned 32-bit values,
+-    but OSPF compares them as signed 32-bit integers.
+-    """
+-
+     if not 0 <= sequence <= 0xffffffff:
+-        raise ValueError(
+-            "OSPF LSA sequence number is outside uint32 range"
+-        )
+-
++        raise ValueError("OSPF LSA sequence number is outside uint32 range")
+     if sequence == 0x80000000:
+-        raise ValueError(
+-            "0x80000000 is a reserved OSPF LSA sequence number"
+-        )
+-
++        raise ValueError("0x80000000 is a reserved OSPF LSA sequence number")
+     if sequence == 0x7fffffff:
+-        raise ValueError(
+-            "OSPF LSA sequence number reached MaxSequenceNumber"
+-        )
+-
++        raise ValueError("OSPF LSA sequence number reached MaxSequenceNumber")
+     return (sequence + 1) & 0xffffffff
+ 
++
+ def finalize_ospfv3_lsa_checksum(lsa_bytes):
+-    """Return an LSA with its Fletcher checksum inserted (without mutating it)."""
+     data = bytearray(lsa_bytes)
+     if len(data) < 20:
+         raise ValueError("LSA is too short")
+diff --git a/ospfv3/lsdb.py b/ospfv3/lsdb.py
+index 5e538ab..43ed273 100644
+--- a/ospfv3/lsdb.py
++++ b/ospfv3/lsdb.py
+@@ -1,11 +1,10 @@
++"""Age-aware OSPFv3 LSDB; FRRouting, not this store, selects routes."""
++
+ import copy
+ import time
+ 
+ from ospfv3 import config as cfg
+-from ospfv3.lsa import (
+-    compare_lsa_instances,
+-    ospfv3_lsa_type_description,
+-)
++from ospfv3.lsa import compare_lsa_instances, ospfv3_lsa_type_description
+ 
+ 
+ class LSDB:
+@@ -42,21 +41,11 @@ class LSDB:
+         return min(cfg.MAX_AGE, base_age + int(time.monotonic() - timestamp))
+ 
+     def update(self, received_lsas):
+-        """
+-        Installs new LSAs and replaces an existing entry only
+-        when a newer instance is received.
+-
+-        Returns True when the change affects routing.
+-        """
++        """Install newer LSAs, honor MaxAge flush; report routing-relevant changes."""
+         routing_changed = False
+-
+         for received in received_lsas:
+             ls_type = received["ls_type"]
+-            key = (
+-                ls_type,
+-                received["link_state_id"],
+-                received["advertising_router"]
+-            )
++            key = (ls_type, received["link_state_id"], received["advertising_router"])
+             current = self.entries.get(key)
+             if current is not None:
+                 aged = dict(current)
+@@ -75,70 +64,38 @@ class LSDB:
+                 if current is not None and comparison <= 0:
+                     continue
+                 if current is None:
+-                    message = (
+-                        "[OSPF][LSDB] installed %s "
+-                        "adv=%s lsid=%s seq=0x%08x"
+-                    )
++                    message = "[OSPF][LSDB] installed %s adv=%s lsid=%s seq=0x%08x"
+                     extra = (received["ls_sequence"],)
+                 else:
+-                    message = (
+-                        "[OSPF][LSDB] updated %s "
+-                        "adv=%s lsid=%s "
+-                        "seq=0x%08x -> 0x%08x"
+-                    )
++                    message = "[OSPF][LSDB] updated %s adv=%s lsid=%s seq=0x%08x -> 0x%08x"
+                     extra = (current["ls_sequence"], received["ls_sequence"])
+                 self.entries[key] = self._install(received)
+ 
+-            if ls_type in (0x2001, 0x2009):
+-                routing_changed = True
+-            self.logger.info(
+-                message,
+-                ospfv3_lsa_type_description(ls_type),
+-                received["advertising_router"],
+-                received["link_state_id"],
+-                *extra
+-            )
+-
++            routing_changed |= ls_type in (0x2001, 0x2009)
++            self.logger.info(message, ospfv3_lsa_type_description(ls_type),
++                             received["advertising_router"], received["link_state_id"], *extra)
+         return routing_changed
+ 
+     def purge_expired(self):
+-        """
+-        Removes LSAs that reached MaxAge.
+-
+-        Returns True when the removal affects routing.
+-        """
+-        expired_keys = [
+-            key for key, lsa in self.entries.items()
+-            if self.get_age(lsa) >= cfg.MAX_AGE
+-        ]
++        """Remove LSAs at MaxAge, preserving logging and update semantics."""
++        expired_keys = [key for key, lsa in self.entries.items()
++                        if self.get_age(lsa) >= cfg.MAX_AGE]
+         routing_changed = False
+-
+         for key in expired_keys:
+             lsa = self.entries.pop(key)
+-            if lsa["ls_type"] in (0x2001, 0x2009):
+-                routing_changed = True
++            routing_changed |= lsa["ls_type"] in (0x2001, 0x2009)
+             self.logger.info(
+-                "[OSPF][LSDB] removed expired %s "
+-                "adv=%s lsid=%s age=%ds",
++                "[OSPF][LSDB] removed expired %s adv=%s lsid=%s age=%ds",
+                 ospfv3_lsa_type_description(lsa["ls_type"]),
+-                lsa["advertising_router"],
+-                lsa["link_state_id"],
+-                cfg.MAX_AGE
+-            )
+-
++                lsa["advertising_router"], lsa["link_state_id"], cfg.MAX_AGE)
+         return routing_changed
+ 
+     def clear_remote(self, local_router_id):
+         removed = 0
+         for key, lsa in list(self.entries.items()):
+-            if lsa.get("advertising_router") == local_router_id:
+-                continue
+-            del self.entries[key]
+-            removed += 1
+-
++            if lsa.get("advertising_router") != local_router_id:
++                del self.entries[key]
++                removed += 1
+         if removed:
+-            self.logger.info(
+-                "[OSPF][LSDB] cleared remote entries=%d",
+-                removed
+-            )
++            self.logger.info("[OSPF][LSDB] cleared remote entries=%d", removed)
+         return removed > 0
+diff --git a/ospfv3/neighbor.py b/ospfv3/neighbor.py
+index 5b9b068..f56589a 100644
+--- a/ospfv3/neighbor.py
++++ b/ospfv3/neighbor.py
+@@ -1,24 +1,21 @@
+-import time
++"""OSPFv3 adjacency state and outstanding LS Requests."""
+ 
++import time
+ from ospfv3.lsa import compare_lsa_instances
+ 
+ 
+ class Neighbor:
+     def __init__(self, logger):
+         self.logger = logger
+-
+         self.port = None
+         self.router_id = None
+         self.ipv6 = None
+         self.mac = None
+-
+         self.router_ids = []
+         self.last_hello_received = None
+-
+         self.dbd_sequence = self._new_dbd_sequence()
+         self.dbd_negotiated = False
+         self.dbd_exchange_complete = False
+-
+         self.request_list = []
+         self.lsr_sent = False
+ 
+@@ -30,71 +27,49 @@ class Neighbor:
+         self.last_hello_received = time.monotonic()
+ 
+     def dead_interval_expired(self, dead_interval):
+-        return (
+-            self.last_hello_received is not None
+-            and time.monotonic() - self.last_hello_received >= dead_interval
+-        )
++        return (self.last_hello_received is not None
++                and time.monotonic() - self.last_hello_received >= dead_interval)
+ 
+     def reset_exchange(self):
+         old_sequence = self.dbd_sequence
+-
+         self.dbd_negotiated = False
+         self.dbd_exchange_complete = False
+-
+         self.request_list = []
+         self.lsr_sent = False
+-
+         self.dbd_sequence = self._new_dbd_sequence()
+-
+         if self.dbd_sequence == old_sequence:
+             self.dbd_sequence = (old_sequence + 1) & 0xffffffff
+ 
+     def update_request_list(self, received_lsas):
+         if not self.request_list:
+             return
+-
+         remaining = []
+-
+         for request in self.request_list:
+             for received in received_lsas:
+-                # Compare instances only when their three-field LSA identity matches.
+-                if (
+-                    request["ls_type"] == received["ls_type"]
+-                    and request["link_state_id"] == received["link_state_id"]
+-                    and request["advertising_router"] == received["advertising_router"]
+-                    and compare_lsa_instances(received, request) >= 0
+-                ):
++                if (request["ls_type"] == received["ls_type"]
++                        and request["link_state_id"] == received["link_state_id"]
++                        and request["advertising_router"] == received["advertising_router"]
++                        and compare_lsa_instances(received, request) >= 0):
+                     break
+             else:
+                 remaining.append(request)
+-
+         old_count = len(self.request_list)
+         new_count = len(remaining)
+         self.request_list = remaining
+-
+         if new_count != old_count:
+-            self.logger.info(
+-                "[OSPF][LSR] received=%d pending=%d",
+-                old_count - new_count,
+-                new_count
+-            )
+-
++            self.logger.info("[OSPF][LSR] received=%d pending=%d",
++                             old_count - new_count, new_count)
+         if old_count and not new_count:
+-            self.logger.info(
+-                "[OSPF][LSR] request-list complete"
+-            )
++            self.logger.info("[OSPF][LSR] request-list complete")
+ 
+     def reset_adjacency(self):
+         self.router_id = None
+         self.ipv6 = None
+         self.mac = None
+         self.router_ids = []
+-
+         self.last_hello_received = None
+-
+         self.reset_exchange()
+ 
+     def reset(self):
+         self.port = None
+-
+-        self.reset_adjacency()
+\ No newline at end of file
++        self.reset_adjacency()
+diff --git a/ospfv3/packet.py b/ospfv3/packet.py
+index ac9cbd7..4e166fd 100644
+--- a/ospfv3/packet.py
++++ b/ospfv3/packet.py
+@@ -1,105 +1,63 @@
+-"""OSPFv3 packet builders used by the Ryu controller.
+-
+-Scapy handles the wire format; the controller handles the OSPF protocol state.
+-Every public builder keeps the interface of the previous implementation.
+-"""
++"""Scapy OSPFv3 wire builders; keep every public API and checksum context."""
+ 
+ from scapy.contrib.ospf import (
+-    OSPFv3_DBDesc,
+-    OSPFv3_Hdr,
+-    OSPFv3_Hello,
+-    OSPFv3_LSA_Hdr,
+-    OSPFv3_LSAck,
+-    OSPFv3_LSReq,
+-    OSPFv3_LSReq_Item,
+-    OSPFv3_LSUpd,
++    OSPFv3_DBDesc, OSPFv3_Hdr, OSPFv3_Hello, OSPFv3_LSA_Hdr,
++    OSPFv3_LSAck, OSPFv3_LSReq, OSPFv3_LSReq_Item, OSPFv3_LSUpd,
+ )
+ from scapy.layers.inet6 import IPv6, in6_chksum
+ from scapy.layers.l2 import Ether
+ from scapy.packet import Raw
+-
+ from ospfv3 import config as cfg
+ 
+-
+ OSPF_PROTOCOL = 89
+ ALL_SPF_ROUTERS = "ff02::5"
+ ALL_SPF_ROUTERS_MAC = "33:33:00:00:00:05"
+ 
+ 
+ def calculate_ospfv3_checksum(src_ipv6, dst_ipv6, ospf_packet):
+-    """Return the OSPFv3 checksum (caller provides zeroed checksum bytes)."""
+-    ipv6 = IPv6(src=src_ipv6, dst=dst_ipv6, nh=OSPF_PROTOCOL)
+-    return in6_chksum(OSPF_PROTOCOL, ipv6, ospf_packet)
++    return in6_chksum(
++        OSPF_PROTOCOL, IPv6(src=src_ipv6, dst=dst_ipv6, nh=OSPF_PROTOCOL),
++        ospf_packet)
++
++
++def _ipv6(dst_ipv6):
++    return IPv6(src=cfg.LINK_LOCAL, dst=dst_ipv6, nh=OSPF_PROTOCOL, hlim=1)
+ 
+ 
+ def _serialize_ospf(pkt_type, payload, dst_ipv6):
+-    ipv6 = IPv6(
+-        src=cfg.LINK_LOCAL,
+-        dst=dst_ipv6,
+-        nh=OSPF_PROTOCOL,
+-        hlim=1,
+-    )
+-    ospf = OSPFv3_Hdr(
+-        type=pkt_type,
+-        src=cfg.ROUTER_ID,
+-        area=cfg.AREA_ID,
+-        instance=cfg.INSTANCE_ID,
+-    )
+-
+-    # The IPv6 underlayer is required for Scapy's OSPFv3 checksum.
+-    return bytes(ipv6 / ospf / payload)[40:]
++    header = OSPFv3_Hdr(type=pkt_type, src=cfg.ROUTER_ID,
++                        area=cfg.AREA_ID, instance=cfg.INSTANCE_ID)
++    # Scapy requires an IPv6 underlayer for the OSPFv3 checksum.
++    return bytes(_ipv6(dst_ipv6) / header / payload)[40:]
+ 
+ 
+ def build_ospfv3_packet(pkt_type, body, dst_ipv6):
+-    """Build an OSPFv3 packet from an already encoded packet body."""
+     return _serialize_ospf(pkt_type, Raw(body), dst_ipv6)
+ 
+ 
+ def build_ospfv3_hello(neighbors=()):
+     hello = OSPFv3_Hello(
+-        intid=cfg.INTERFACE_ID,
+-        prio=cfg.ROUTER_PRIORITY,
+-        options=cfg.OPTIONS,
+-        hellointerval=cfg.HELLO_INTERVAL,
+-        deadinterval=cfg.DEAD_INTERVAL,
+-        router="0.0.0.0",
+-        backup="0.0.0.0",
+-        neighbors=list(neighbors),
+-    )
++        intid=cfg.INTERFACE_ID, prio=cfg.ROUTER_PRIORITY, options=cfg.OPTIONS,
++        hellointerval=cfg.HELLO_INTERVAL, deadinterval=cfg.DEAD_INTERVAL,
++        router="0.0.0.0", backup="0.0.0.0", neighbors=list(neighbors))
+     return _serialize_ospf(1, hello, ALL_SPF_ROUTERS)
+ 
+ 
+ def build_ospfv3_dbd(dd_sequence, flags=0x07):
+-    dbd = OSPFv3_DBDesc(
+-        options=cfg.OPTIONS,
+-        mtu=cfg.INTERFACE_MTU,
+-        dbdescr=flags,
+-        ddseq=dd_sequence,
+-        lsaheaders=[],
+-    )
++    dbd = OSPFv3_DBDesc(options=cfg.OPTIONS, mtu=cfg.INTERFACE_MTU,
++                        dbdescr=flags, ddseq=dd_sequence, lsaheaders=[])
+     return _serialize_ospf(2, dbd, ALL_SPF_ROUTERS)
+ 
+ 
+ def build_ospfv3_lsr(lsa_requests, dst_ipv6):
+-    requests = [
+-        OSPFv3_LSReq_Item(
+-            type=lsa["ls_type"],
+-            id=lsa["link_state_id"],
+-            adrouter=lsa["advertising_router"],
+-        )
+-        for lsa in lsa_requests
+-    ]
++    requests = [OSPFv3_LSReq_Item(
++        type=lsa["ls_type"], id=lsa["link_state_id"],
++        adrouter=lsa["advertising_router"]) for lsa in lsa_requests]
+     return _serialize_ospf(3, OSPFv3_LSReq(requests=requests), dst_ipv6)
+ 
+ 
+-
+ def encode_ospfv3_lsu_body(raw_lsas):
+-    """Build an LSU body using Scapy, preserving each LSA's raw wire bytes.
+-
+-    Do not decode/rebuild the LSAs: opaque, unknown, malformed and MaxAge
+-    advertisements must retain their exact original bytes. The 4-byte
+-    LSACount belongs to Scapy's OSPFv3_LSUpd FieldLenField.
+-    """
++    """Keep raw, including unknown and MaxAge LSAs; Scapy builds LSA count."""
+     packets = []
+     for index, raw_lsa in enumerate(raw_lsas):
+         try:
+@@ -107,79 +65,49 @@ def encode_ospfv3_lsu_body(raw_lsas):
+         except TypeError:
+             raise TypeError(
+                 "sequence item %d: expected a bytes-like object, %s found"
+-                % (index, type(raw_lsa).__name__)
+-            ) from None
++                % (index, type(raw_lsa).__name__)) from None
+         packets.append(Raw(load=bytes(raw_lsa)))
+     return bytes(OSPFv3_LSUpd(lsalist=packets))
+ 
+ 
+ def build_ospfv3_lsu(lsu_body, dst_ipv6):
+-    """Wrap the existing LS Update body; LSA encoding migrates separately."""
+     if len(lsu_body) < 4:
+         raise ValueError("LSU body must contain a 4-byte LSA count")
+-
+     count = int.from_bytes(lsu_body[:4], byteorder="big")
+-    lsu = OSPFv3_LSUpd(lsacount=count) / Raw(lsu_body[4:])
+-    return _serialize_ospf(4, lsu, dst_ipv6)
++    return _serialize_ospf(
++        4, OSPFv3_LSUpd(lsacount=count) / Raw(lsu_body[4:]), dst_ipv6)
+ 
+ 
+ def build_ospfv3_lsack(lsa_headers, dst_ipv6):
+-    headers = [
+-        OSPFv3_LSA_Hdr(lsa["raw_header"])
+-        for lsa in lsa_headers
+-    ]
++    headers = [OSPFv3_LSA_Hdr(lsa["raw_header"]) for lsa in lsa_headers]
+     return _serialize_ospf(5, OSPFv3_LSAck(lsaheaders=headers), dst_ipv6)
+ 
+ 
+ def build_ospfv3_frame(ospf_packet, dst_ipv6, dst_mac):
+-    """Encapsulate an already encoded OSPFv3 packet in Ethernet/IPv6."""
+-    return bytes(
+-        Ether(src=cfg.ROUTER_MAC, dst=dst_mac)
+-        / IPv6(
+-            src=cfg.LINK_LOCAL,
+-            dst=dst_ipv6,
+-            nh=OSPF_PROTOCOL,
+-            hlim=1,
+-        )
+-        / Raw(ospf_packet)
+-    )
++    return bytes(Ether(src=cfg.ROUTER_MAC, dst=dst_mac)
++                 / _ipv6(dst_ipv6) / Raw(ospf_packet))
+ 
+ 
+ def build_ospfv3_hello_frame(neighbors=()):
+-    return build_ospfv3_frame(
+-        build_ospfv3_hello(neighbors),
+-        ALL_SPF_ROUTERS,
+-        ALL_SPF_ROUTERS_MAC,
+-    )
++    return build_ospfv3_frame(build_ospfv3_hello(neighbors),
++                             ALL_SPF_ROUTERS, ALL_SPF_ROUTERS_MAC)
+ 
+ 
+ def build_ospfv3_dbd_frame(dd_sequence, flags=0x07):
+-    return build_ospfv3_frame(
+-        build_ospfv3_dbd(dd_sequence, flags),
+-        ALL_SPF_ROUTERS,
+-        ALL_SPF_ROUTERS_MAC,
+-    )
++    return build_ospfv3_frame(build_ospfv3_dbd(dd_sequence, flags),
++                             ALL_SPF_ROUTERS, ALL_SPF_ROUTERS_MAC)
+ 
+ 
+ def build_ospfv3_lsr_frame(lsa_requests, dst_ipv6, dst_mac):
+-    return build_ospfv3_frame(
+-        build_ospfv3_lsr(lsa_requests, dst_ipv6),
+-        dst_ipv6,
+-        dst_mac,
+-    )
++    return build_ospfv3_frame(build_ospfv3_lsr(lsa_requests, dst_ipv6),
++                             dst_ipv6, dst_mac)
+ 
+ 
+ def build_ospfv3_lsu_frame(lsu_body, dst_ipv6, dst_mac):
+-    return build_ospfv3_frame(
+-        build_ospfv3_lsu(lsu_body, dst_ipv6),
+-        dst_ipv6,
+-        dst_mac,
+-    )
++    return build_ospfv3_frame(build_ospfv3_lsu(lsu_body, dst_ipv6),
++                             dst_ipv6, dst_mac)
+ 
+ 
+ def build_ospfv3_lsack_frame(lsa_headers, dst_ipv6, dst_mac):
+-    return build_ospfv3_frame(
+-        build_ospfv3_lsack(lsa_headers, dst_ipv6),
+-        dst_ipv6,
+-        dst_mac,
+-    )
+\ No newline at end of file
++    return build_ospfv3_frame(build_ospfv3_lsack(lsa_headers, dst_ipv6),
++                             dst_ipv6, dst_mac)
+diff --git a/ospfv3/parser.py b/ospfv3/parser.py
+index f8c6aa9..efd08eb 100644
+--- a/ospfv3/parser.py
++++ b/ospfv3/parser.py
+@@ -1,28 +1,18 @@
+-"""Decode OSPFv3 packets into the dictionaries used by the controller."""
++"""Strict OSPFv3 packet parsers; Scapy handles the protocol fields."""
+ 
+ from ipaddress import IPv4Address
+ import struct
+ 
+ from scapy.contrib.ospf import (
+-    OSPFv3_DBDesc,
+-    OSPFv3_Hdr,
+-    OSPFv3_Hello,
+-    OSPFv3_LSA_Hdr,
+-    OSPFv3_LSAck,
+-    OSPFv3_LSReq,
+-    OSPFv3_LSUpd,
++    OSPFv3_DBDesc, OSPFv3_Hdr, OSPFv3_Hello, OSPFv3_LSA_Hdr,
++    OSPFv3_LSAck, OSPFv3_LSReq, OSPFv3_LSUpd,
+ )
+ from scapy.error import Scapy_Exception
+-
+ from ospfv3.lsa import (
+-    parse_ospfv3_router_lsa,
+-    parse_ospfv3_link_lsa,
+-    parse_ospfv3_intra_area_prefix_lsa,
+-    ospfv3_lsa_checksum,
++    parse_ospfv3_router_lsa, parse_ospfv3_link_lsa,
++    parse_ospfv3_intra_area_prefix_lsa, ospfv3_lsa_checksum,
+ )
+ 
+-
+-# Scapy decodes LSA bodies in ospfv3.lsa; unsupported types keep only the header.
+ _LSA_BODY_PARSERS = {
+     0x2001: ("router_lsa", "Router-LSA", parse_ospfv3_router_lsa),
+     0x0008: ("link_lsa", "Link-LSA", parse_ospfv3_link_lsa),
+@@ -31,20 +21,17 @@ _LSA_BODY_PARSERS = {
+ 
+ 
+ def _packet_bytes(ospf_data, pkt_len, minimum_length):
+-    """Limit Scapy to the declared OSPF length (excluding Ethernet padding)."""
+     if pkt_len < minimum_length:
+         raise ValueError(f"packet is shorter than {minimum_length} bytes")
+     if len(ospf_data) < pkt_len:
+         raise ValueError(
+-            f"truncated OSPF packet: declared={pkt_len} available={len(ospf_data)}"
+-        )
++            f"truncated OSPF packet: declared={pkt_len} available={len(ospf_data)}")
+     if int.from_bytes(ospf_data[2:4], "big") != pkt_len:
+         raise ValueError("OSPF header length differs from pkt_len")
+     return bytes(ospf_data[:pkt_len])
+ 
+ 
+ def _decode_packet(raw_packet, packet_class):
+-    """Decode bytes already length-checked by the public parser."""
+     try:
+         packet = OSPFv3_Hdr(raw_packet)
+         if not isinstance(packet.payload, packet_class):
+@@ -56,12 +43,9 @@ def _decode_packet(raw_packet, packet_class):
+ 
+ def _lsa_header_fields(header):
+     return {
+-        "ls_age": int(header.age),
+-        "ls_type": int(header.type),
+-        "link_state_id": header.id,
+-        "advertising_router": header.adrouter,
+-        "ls_sequence": int(header.seq),
+-        "ls_checksum": int(header.chksum),
++        "ls_age": int(header.age), "ls_type": int(header.type),
++        "link_state_id": header.id, "advertising_router": header.adrouter,
++        "ls_sequence": int(header.seq), "ls_checksum": int(header.chksum),
+         "ls_length": int(header.len),
+     }
+ 
+@@ -69,32 +53,39 @@ def _lsa_header_fields(header):
+ def _parse_lsa_header(raw_header):
+     if len(raw_header) != 20:
+         raise ValueError("LSA header must contain exactly 20 bytes")
+-
+     try:
+         header = OSPFv3_LSA_Hdr(bytes(raw_header))
+     except (Scapy_Exception, struct.error, IndexError, ValueError, TypeError) as exc:
+         raise ValueError(f"invalid LSA header: {exc}") from exc
+-
+     return {**_lsa_header_fields(header), "raw_header": bytes(raw_header)}
+ 
+ 
++def _items(ospf_data, pkt_len, base, size, packet_class, field,
++           invalid, mismatch, required=False):
++    """Validate byte alignment and Scapy's decoded item count together."""
++    raw = _packet_bytes(ospf_data, pkt_len, base)
++    length = pkt_len - base
++    if (required and length <= 0) or length % size:
++        raise ValueError(f"{invalid}={length}")
++    packet = _decode_packet(raw, packet_class)
++    elements = list(getattr(packet, field) or ())
++    if len(elements) != length // size:
++        raise ValueError(mismatch)
++    return packet, elements
++
++
+ def parse_hello(ospf_data, pkt_len):
+     raw = _packet_bytes(ospf_data, pkt_len, 36)
+-    if (pkt_len - 36) % 4 != 0:
++    if (pkt_len - 36) % 4:
+         raise ValueError(f"invalid neighbor-list length={pkt_len - 36}")
+-
+     hello = _decode_packet(raw, OSPFv3_Hello)
+     neighbors = list(hello.neighbors)
+     if len(neighbors) != (pkt_len - 36) // 4:
+         raise ValueError("Hello neighbor count does not match payload length")
+-
+     return {
+-        "interface_id": int(hello.intid),
+-        "router_priority": int(hello.prio),
+-        "options": int(hello.options),
+-        "hello_interval": int(hello.hellointerval),
++        "interface_id": int(hello.intid), "router_priority": int(hello.prio),
++        "options": int(hello.options), "hello_interval": int(hello.hellointerval),
+         "dead_interval": int(hello.deadinterval),
+-        # The existing controller receives DR/BDR as 32-bit integers.
+         "designated_router": int(IPv4Address(hello.router)),
+         "backup_designated_router": int(IPv4Address(hello.backup)),
+         "neighbors": neighbors,
+@@ -102,118 +93,73 @@ def parse_hello(ospf_data, pkt_len):
+ 
+ 
+ def parse_dbd(ospf_data, pkt_len):
+-    raw = _packet_bytes(ospf_data, pkt_len, 28)
+-    if (pkt_len - 28) % 20 != 0:
+-        raise ValueError(f"invalid LSA-summary length={pkt_len - 28}")
+-
+-    dbd = _decode_packet(raw, OSPFv3_DBDesc)
+-    # The field list is decoded by Scapy with the OSPF header as underlayer.
+-    lsa_headers = list(dbd.lsaheaders or ())
+-    if len(lsa_headers) != (pkt_len - 28) // 20:
+-        raise ValueError("DBD summary count does not match payload length")
+-    headers = [_lsa_header_fields(header) for header in lsa_headers]
++    dbd, lsa_headers = _items(
++        ospf_data, pkt_len, 28, 20, OSPFv3_DBDesc, "lsaheaders",
++        "invalid LSA-summary length", "DBD summary count does not match payload length")
+     flags = int(dbd.dbdescr)
+-
+     return {
+-        "interface_mtu": int(dbd.mtu),
+-        "options": int(dbd.options),
+-        "i_bit": bool(flags & 0x04),
+-        "m_bit": bool(flags & 0x02),
+-        "ms_bit": bool(flags & 0x01),
+-        "dd_sequence": int(dbd.ddseq),
+-        "lsa_headers": headers,
++        "interface_mtu": int(dbd.mtu), "options": int(dbd.options),
++        "i_bit": bool(flags & 4), "m_bit": bool(flags & 2),
++        "ms_bit": bool(flags & 1), "dd_sequence": int(dbd.ddseq),
++        "lsa_headers": [_lsa_header_fields(header) for header in lsa_headers],
+     }
+ 
+ 
+ def parse_lsr(ospf_data, pkt_len):
+-    raw = _packet_bytes(ospf_data, pkt_len, 16)
+-    request_length = pkt_len - 16
+-    if request_length <= 0 or request_length % 12 != 0:
+-        raise ValueError(f"invalid payload length={request_length}")
+-
+-    requests_packet = _decode_packet(raw, OSPFv3_LSReq)
+-    requests = list(requests_packet.requests or ())
+-    if len(requests) != request_length // 12:
+-        raise ValueError("LSR item count does not match payload length")
+-
+-    return [
+-        {
+-            "ls_type": int(item.type),
+-            "link_state_id": item.id,
+-            "advertising_router": item.adrouter,
+-        }
+-        for item in requests
+-    ]
++    _, requests = _items(
++        ospf_data, pkt_len, 16, 12, OSPFv3_LSReq, "requests",
++        "invalid payload length", "LSR item count does not match payload length", True)
++    return [{
++        "ls_type": int(item.type), "link_state_id": item.id,
++        "advertising_router": item.adrouter,
++    } for item in requests]
+ 
+ 
+ def parse_lsu(ospf_data, pkt_len):
+     raw = _packet_bytes(ospf_data, pkt_len, 20)
+-    # Decode only the Scapy count field. Decoding the full Scapy LSUpd list
+-    # here could interpret unsupported LSA types differently from lsa.py.
+     try:
+         remainder, number_of_lsas = OSPFv3_LSUpd.fields_desc[0].getfield(
+-            None, raw[16:20]
+-        )
++            None, raw[16:20])
+     except (Scapy_Exception, struct.error, IndexError, ValueError, TypeError) as exc:
+         raise ValueError(f"invalid LSU LSA count: {exc}") from exc
+     if remainder:
+         raise ValueError("invalid LSU count field length")
+ 
+-    lsa_headers = []
+-    offset = 20
+-
++    parsed, offset = [], 20
+     for index in range(number_of_lsas):
++        number = index + 1
+         if offset + 20 > pkt_len:
+-            raise ValueError(f"insufficient data for LSA header #{index + 1}")
+-
+-        raw_header = raw[offset:offset + 20]
+-        lsa = _parse_lsa_header(raw_header)
+-        ls_length = lsa["ls_length"]
+-        if ls_length < 20:
+-            raise ValueError(f"invalid LSA length #{index + 1}: {ls_length}")
+-        if offset + ls_length > pkt_len:
++            raise ValueError(f"insufficient data for LSA header #{number}")
++        lsa = _parse_lsa_header(raw[offset:offset + 20])
++        length = lsa["ls_length"]
++        if length < 20:
++            raise ValueError(f"invalid LSA length #{number}: {length}")
++        if offset + length > pkt_len:
+             raise ValueError(
+-                f"LSA #{index + 1} exceeds packet boundary "
+-                f"(offset={offset} length={ls_length} packet={pkt_len})"
+-            )
+-
+-        raw_lsa = raw[offset:offset + ls_length]
+-
+-        # Verify each complete LSA before decoding or exposing it to the LSDB.
+-        # Fletcher covers the LSA header and body, but not LS Age (bytes 0-1).
+-        expected_checksum = ospfv3_lsa_checksum(raw_lsa)
+-        if lsa["ls_checksum"] != expected_checksum:
++                f"LSA #{number} exceeds packet boundary "
++                f"(offset={offset} length={length} packet={pkt_len})")
++        wire = raw[offset:offset + length]
++        checksum = ospfv3_lsa_checksum(wire)
++        if lsa["ls_checksum"] != checksum:
+             raise ValueError(
+-                f"invalid LSA checksum #{index + 1}: "
+-                f"received=0x{lsa['ls_checksum']:04x}, "
+-                f"calculated=0x{expected_checksum:04x}"
+-            )
+-
++                f"invalid LSA checksum #{number}: "
++                f"received=0x{lsa['ls_checksum']:04x}, calculated=0x{checksum:04x}")
+         body_parser = _LSA_BODY_PARSERS.get(lsa["ls_type"])
+         if body_parser is not None:
+             key, label, decode = body_parser
+             try:
+-                lsa[key] = decode(raw_lsa)
++                lsa[key] = decode(wire)
+             except ValueError as exc:
+-                raise ValueError(f"{label} parse error #{index + 1}: {exc}") from exc
+-
+-        lsa_headers.append(lsa)
+-        offset += ls_length
+-
++                raise ValueError(f"{label} parse error #{number}: {exc}") from exc
++        parsed.append(lsa)
++        offset += length
+     if offset != pkt_len:
+         raise ValueError(f"length mismatch parsed={offset} packet={pkt_len}")
+-
+-    return lsa_headers
++    return parsed
+ 
+ 
+ def parse_lsack(ospf_data, pkt_len):
+-    raw = _packet_bytes(ospf_data, pkt_len, 16)
+-    ack_length = pkt_len - 16
+-    if ack_length <= 0 or ack_length % 20 != 0:
+-        raise ValueError(f"invalid payload length={ack_length}")
+-
+-    ack = _decode_packet(raw, OSPFv3_LSAck)
+-    headers = list(ack.lsaheaders or ())
+-    if len(headers) != ack_length // 20:
+-        raise ValueError("LSAck header count does not match payload length")
++    _, headers = _items(
++        ospf_data, pkt_len, 16, 20, OSPFv3_LSAck, "lsaheaders",
++        "invalid payload length", "LSAck header count does not match payload length", True)
+     return [_lsa_header_fields(header) for header in headers]
+diff --git a/ryu_sdn.py b/ryu_sdn.py
+index fba6fac..60c7910 100644
+--- a/ryu_sdn.py
++++ b/ryu_sdn.py
+@@ -1,22 +1,23 @@
++"""Ryu event wiring for the OSPFv3 controller.
++
++FRRouting makes transit routing decisions; Ryu maintains OSPFv3 adjacency,
++local LSAs, the logical IPv6 gateway and the two-way OpenFlow data path.
++"""
++
++import ipaddress
++
+ from ryu.base import app_manager
+ from ryu.controller import ofp_event
+-from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
+-from ryu.controller.handler import set_ev_cls
++from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, set_ev_cls
+ from ryu.ofproto import ofproto_v1_3
+-from ryu.lib.packet import packet
+-from ryu.lib.packet import ipv6
+-from ryu.lib.packet import ethernet
+-from ryu.lib.packet import icmpv6
++from ryu.lib.packet import packet, ipv6, ethernet, icmpv6
+ from ryu.lib import hub
+-import ipaddress
+-
+ from scapy.contrib.ospf import OSPFv3_Hdr
+ from scapy.error import Scapy_Exception
+ 
+ from dataplane import DataPlane
+-
++from controller_openflow import OpenFlowMixin
+ from ospfv3 import config as cfg
+-from ospfv3.routing import Routing
+ from ospfv3.lsdb import LSDB
+ from ospfv3.local_lsa import LocalLSA
+ from ospfv3.neighbor import Neighbor
+@@ -24,363 +25,169 @@ from ospfv3.controller_diagnostics import OSPFDiagnosticsMixin
+ from ospfv3.controller_rx import OSPFReceiveMixin
+ from ospfv3.controller_tx import OSPFTransmitMixin
+ from ospfv3.controller_timers import OSPFTimerMixin
+-from controller_openflow import OpenFlowMixin
+ from ospfv3.packet import calculate_ospfv3_checksum
+ 
+-class OSPFv3Controller(OSPFDiagnosticsMixin, OSPFReceiveMixin, OSPFTransmitMixin, OSPFTimerMixin, OpenFlowMixin, app_manager.RyuApp):
++
++class OSPFv3Controller(OSPFDiagnosticsMixin, OSPFReceiveMixin,
++                       OSPFTransmitMixin, OSPFTimerMixin, OpenFlowMixin,
++                       app_manager.RyuApp):
+     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+ 
+     def __init__(self, *args, **kwargs):
+         super(OSPFv3Controller, self).__init__(*args, **kwargs)
+-
+         self.datapath = None
+         self.data_plane = DataPlane()
+         self.installed_ipv6_host_flows = {}
+         self.pending_ndp_barriers = {}
+-
+         self.neighbor = Neighbor(self.logger)
+         self.lsdb = LSDB(self.logger)
+-        self.routing = Routing(self.lsdb)
+-        self.ipv6_routing_table = {}
+         self.local_lsa = LocalLSA(self.lsdb, self.logger)
+         self.local_lsa_ack_pending = {}
+         self.local_lsu_sent = False
+-
+         self.local_lsa_rebuild_required = False
+         self.ospf_resync_required = True
+-
+         self.hello_thread = hub.spawn(self.hello_loop)
+-
+-        self.neighbor_dead_thread = hub.spawn(
+-            self.neighbor_dead_loop
+-        )
+-        
++        self.neighbor_dead_thread = hub.spawn(self.neighbor_dead_loop)
+         self.lsdb_aging_thread = hub.spawn(self.lsdb_aging_loop)
+-
+         self.local_lsu_last_tx = None
+-
+-        self.local_lsa_retransmission_thread = hub.spawn(
+-            self.local_lsa_retransmission_loop
+-        )
+-
+-        self.local_lsa_refresh_thread = hub.spawn(
+-            self.local_lsa_refresh_loop
+-        )
+-
+-
++        self.local_lsa_retransmission_thread = hub.spawn(self.local_lsa_retransmission_loop)
++        self.local_lsa_refresh_thread = hub.spawn(self.local_lsa_refresh_loop)
+ 
+     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
+     def switch_features_handler(self, ev):
+         datapath = ev.msg.datapath
+         self.datapath = datapath
+-
+         self.data_plane.reset()
+         self.installed_ipv6_host_flows.clear()
+         self.pending_ndp_barriers.clear()
+-
+         self.neighbor.reset()
+         self.ospf_resync_required = True
+-
+-        remote_routing_changed = (
+-            self.lsdb.clear_remote(cfg.ROUTER_ID)
+-        )
+-
++        self.lsdb.clear_remote(cfg.ROUTER_ID)
+         self.local_lsa_ack_pending.clear()
+         self.local_lsu_sent = False
+         self.local_lsu_last_tx = None
++        self.local_lsa_rebuild_required = bool(self.local_lsa)
++        self.logger.info("[DATA][RESET] dynamic data-plane state cleared")
++        self.logger.info("[OSPF][RESET] neighbor session and remote LSDB cleared")
+ 
+-        self.local_lsa_rebuild_required = bool(
+-            self.local_lsa
+-        )
+-
+-        if remote_routing_changed:
+-            self.recompute_routing_state()
+-
+-        self.logger.info(
+-            "[DATA][RESET] dynamic data-plane state cleared"
+-        )
+-
+-        self.logger.info(
+-            "[OSPF][RESET] neighbor session and remote LSDB cleared"
+-        )
+-                        
+         ofproto = datapath.ofproto
+         parser = datapath.ofproto_parser
+-
+         delete_flows = parser.OFPFlowMod(
+-            datapath=datapath,
+-            command=ofproto.OFPFC_DELETE,
+-            table_id=0,
+-            out_port=ofproto.OFPP_ANY,
+-            out_group=ofproto.OFPG_ANY,
+-            match=parser.OFPMatch()
+-        )
+-
+-        datapath.send_msg(
+-            delete_flows
+-        )
+-
+-        self.logger.info(
+-            "[OPENFLOW] cleared table=0 stale flows"
+-        )
+-
+-        match = parser.OFPMatch()
+-
+-        actions = [
+-            parser.OFPActionOutput(
+-                ofproto.OFPP_CONTROLLER,
+-                ofproto.OFPCML_NO_BUFFER
+-            )
+-        ]
+-
+-        self._send_action_flow(datapath, match, 0, actions)
+-
+-        self.logger.info(
+-            "[OPENFLOW] switch connected DPID=%016x "
+-            "table-miss installed",
+-            datapath.id
+-        )
+-
+-    @set_ev_cls(
+-        ofp_event.EventOFPBarrierReply,
+-        MAIN_DISPATCHER
+-    )
++            datapath=datapath, command=ofproto.OFPFC_DELETE, table_id=0,
++            out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY,
++            match=parser.OFPMatch())
++        datapath.send_msg(delete_flows)
++        self.logger.info("[OPENFLOW] cleared table=0 stale flows")
++        actions = [parser.OFPActionOutput(
++            ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
++        self._send_action_flow(datapath, parser.OFPMatch(), 0, actions)
++        self.logger.info("[OPENFLOW] switch connected DPID=%016x "
++                         "table-miss installed", datapath.id)
++
++    @set_ev_cls(ofp_event.EventOFPBarrierReply, MAIN_DISPATCHER)
+     def barrier_reply_handler(self, ev):
+         xid = ev.msg.xid
+-
+-        pending = self.pending_ndp_barriers.pop(
+-            xid,
+-            None
+-        )
+-
++        pending = self.pending_ndp_barriers.pop(xid, None)
+         if pending is None:
+             return
+-
+         frame = pending["frame"]
+         out_port = pending["out_port"]
+         destination_ipv6 = pending["destination_ipv6"]
+         destination_mac = pending["destination_mac"]
+-
+-        self.logger.info(
+-            "[DATA][BARRIER OK] xid=%s",
+-            xid
+-        )
+-
+-        if self.send_frame(
+-            frame,
+-            out_port
+-        ):
+-            self.logger.info(
+-                "[NDP][NA TX] "
+-                "to=%s mac=%s port=%s",
+-                destination_ipv6,
+-                destination_mac,
+-                out_port
+-            )
+-
+-
+-
+-
++        self.logger.info("[DATA][BARRIER OK] xid=%s", xid)
++        if self.send_frame(frame, out_port):
++            self.logger.info("[NDP][NA TX] to=%s mac=%s port=%s",
++                             destination_ipv6, destination_mac, out_port)
+ 
+     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
+     def packet_in_handler(self, ev):
+         msg = ev.msg
+         in_port = msg.match.get("in_port")
+-
+         pkt = packet.Packet(msg.data)
+         eth_pkt = pkt.get_protocol(ethernet.ethernet)
+-
+         ipv6_pkt = pkt.get_protocol(ipv6.ipv6)
+ 
+         if ipv6_pkt and ipv6_pkt.nxt == 58:
+-            frame = self.data_plane.handle_ndp(
+-                pkt,
+-                eth_pkt,
+-                ipv6_pkt,
+-                in_port
+-            )
+-
++            frame = self.data_plane.handle_ndp(pkt, eth_pkt, ipv6_pkt, in_port)
+             if frame is not None:
+-                flows_installed = (
+-                    self.try_install_ipv6_host_flows()
+-                )
+-
++                flows_installed = self.try_install_ipv6_host_flows()
+                 if flows_installed:
+                     datapath = self.datapath
+                     parser = datapath.ofproto_parser
+-
+-                    barrier = parser.OFPBarrierRequest(
+-                        datapath
+-                    )
+-
++                    barrier = parser.OFPBarrierRequest(datapath)
+                     datapath.set_xid(barrier)
+-
+-                    self.pending_ndp_barriers[
+-                        barrier.xid
+-                    ] = {
+-                        "frame": frame,
+-                        "out_port": in_port,
++                    self.pending_ndp_barriers[barrier.xid] = {
++                        "frame": frame, "out_port": in_port,
+                         "destination_ipv6": ipv6_pkt.src,
+-                        "destination_mac": eth_pkt.src
++                        "destination_mac": eth_pkt.src,
+                     }
+-
+-                    self.logger.info(
+-                        "[DATA][BARRIER WAIT] xid=%s",
+-                        barrier.xid
+-                    )
+-
++                    self.logger.info("[DATA][BARRIER WAIT] xid=%s", barrier.xid)
+                     datapath.send_msg(barrier)
+-
+                 else:
+-                    if self.send_frame(
+-                        frame,
+-                        in_port
+-                    ):
+-                        self.logger.info(
+-                            "[NDP][NA TX] "
+-                            "to=%s mac=%s port=%s",
+-                            ipv6_pkt.src,
+-                            eth_pkt.src,
+-                            in_port
+-                        )
+-
++                    if self.send_frame(frame, in_port):
++                        self.logger.info("[NDP][NA TX] to=%s mac=%s port=%s",
++                                         ipv6_pkt.src, eth_pkt.src, in_port)
+                 return
+ 
+-            frame = self.data_plane.handle_echo_request(
+-                pkt,
+-                eth_pkt,
+-                ipv6_pkt,
+-                in_port
+-            )
+-
++            frame = self.data_plane.handle_echo_request(pkt, eth_pkt, ipv6_pkt, in_port)
+             if frame is not None:
+-                if self.send_frame(
+-                    frame,
+-                    in_port
+-                ):
+-                    self.logger.info(
+-                        "[ICMPv6][ECHO REPLY TX] "
+-                        "to=%s mac=%s port=%s",
+-                        ipv6_pkt.src,
+-                        eth_pkt.src,
+-                        in_port
+-                    )
+-
++                if self.send_frame(frame, in_port):
++                    self.logger.info("[ICMPv6][ECHO REPLY TX] to=%s mac=%s port=%s",
++                                     ipv6_pkt.src, eth_pkt.src, in_port)
+                 return
+-
+-            # A rejected Neighbor Solicitation must not fall through to
+-            # ordinary IPv6 host learning or first-packet forwarding.
++            # Never learn/forward rejected Neighbor Solicitations.
+             icmp_pkt = pkt.get_protocol(icmpv6.icmpv6)
+             if icmp_pkt is not None and icmp_pkt.type_ == icmpv6.ND_NEIGHBOR_SOLICIT:
+                 return
+ 
+-        if (
+-            ipv6_pkt is not None
+-            and eth_pkt is not None
+-            and eth_pkt.dst == cfg.ROUTER_MAC
+-            and ipv6_pkt.nxt in (6, 17, 58)
+-        ):
++        # OSPF (89), ND (133-137) and MLD never enter the data fast path.
++        data_icmp = (pkt.get_protocol(icmpv6.icmpv6)
++                     if ipv6_pkt is not None and ipv6_pkt.nxt == 58 else None)
++        is_data_payload = (
++            ipv6_pkt is not None and
++            (ipv6_pkt.nxt in (6, 17) or (
++                ipv6_pkt.nxt == 58 and data_icmp is not None
++                and data_icmp.type_ in self._DATA_ICMPV6_TYPES)))
++
++        if (ipv6_pkt is not None and eth_pkt is not None
++                and eth_pkt.dst == cfg.ROUTER_MAC and is_data_payload):
+             lan_host_valid = self.data_plane.learn_lan_host(
+-                in_port=in_port,
+-                ipv6_address=ipv6_pkt.src,
+-                mac_address=eth_pkt.src
+-            )
+-
++                in_port=in_port, ipv6_address=ipv6_pkt.src, mac_address=eth_pkt.src)
+             if lan_host_valid:
+-                destination = ipaddress.IPv6Address(
+-                    ipv6_pkt.dst
+-                )
+-
+-                matching_route = None
+-                matching_prefix_length = -1
+-
+-                for route in self.get_ospf_transit_routes():
+-                    network = ipaddress.IPv6Network(
+-                        f'{route["prefix"]}/{route["prefix_length"]}',
+-                        strict=False
+-                    )
+-
+-                    if (
+-                        destination in network
+-                        and route["prefix_length"]
+-                        > matching_prefix_length
+-                    ):
+-                        matching_route = route
+-                        matching_prefix_length = route["prefix_length"]
+-
+-                if (
+-                    matching_route is not None
+-                    and self.data_plane.transit_port is not None
+-                    and self.data_plane.transit_router_mac is not None
+-                ):
++                destination = ipaddress.IPv6Address(ipv6_pkt.dst)
++                if (destination in ipaddress.IPv6Network("2000::/3")
++                        and destination not in self.data_plane.lan_network
++                        and self.data_plane.transit_port is not None
++                        and self.data_plane.transit_router_mac is not None):
+                     self.try_install_ipv6_host_flows()
+-
+                     datapath = msg.datapath
+                     ofproto = datapath.ofproto
+                     parser = datapath.ofproto_parser
+-
+                     actions = [
+                         parser.OFPActionDecNwTtl(),
+-                        parser.OFPActionSetField(
+-                            eth_src=cfg.ROUTER_MAC
+-                        ),
+-                        parser.OFPActionSetField(
+-                            eth_dst=(
+-                                self.data_plane.transit_router_mac
+-                            )
+-                        ),
+-                        parser.OFPActionOutput(
+-                            self.data_plane.transit_port
+-                        )
++                        parser.OFPActionSetField(eth_src=cfg.ROUTER_MAC),
++                        parser.OFPActionSetField(eth_dst=self.data_plane.transit_router_mac),
++                        parser.OFPActionOutput(self.data_plane.transit_port),
+                     ]
+-
+                     packet_out = parser.OFPPacketOut(
+-                        datapath=datapath,
+-                        buffer_id=ofproto.OFP_NO_BUFFER,
+-                        in_port=in_port,
+-                        actions=actions,
+-                        data=msg.data
+-                    )
+-
+-                    datapath.send_msg(
+-                        packet_out
+-                    )
+-
++                        datapath=datapath, buffer_id=ofproto.OFP_NO_BUFFER,
++                        in_port=in_port, actions=actions, data=msg.data)
++                    datapath.send_msg(packet_out)
+                     self.logger.info(
+-                        "[DATA][FIRST PACKET FORWARD] "
+-                        "host=%s dst=%s via=%s",
+-                        ipv6_pkt.src,
+-                        ipv6_pkt.dst,
+-                        matching_route["next_hop"]
+-                    )
+-
++                        "[DATA][FIRST PACKET FORWARD] host=%s dst=%s via=R1/FRRouting",
++                        ipv6_pkt.src, ipv6_pkt.dst)
+                     return
+ 
+         if ipv6_pkt and ipv6_pkt.nxt == 89:
+             try:
+-                ipv6_index = pkt.protocols.index(
+-                    ipv6_pkt
+-                )
+-                ospf_payload = pkt.protocols[
+-                    ipv6_index + 1
+-                ]
++                ipv6_index = pkt.protocols.index(ipv6_pkt)
++                ospf_payload = pkt.protocols[ipv6_index + 1]
+             except (ValueError, IndexError):
+                 return
+-
+-            if not isinstance(
+-                ospf_payload,
+-                (bytes, bytearray)
+-            ):
++            if not isinstance(ospf_payload, (bytes, bytearray)):
+                 return
+-
+-            ospf_data = bytes(
+-                ospf_payload
+-            )
+-
++            ospf_data = bytes(ospf_payload)
+             if len(ospf_data) >= 16:
+-                # Scapy decodes only the fixed 16-byte OSPFv3 header.
+-                # Keep the packet-length and IPv6 pseudo-header checksum
+-                # validation below unchanged.
+                 try:
+                     ospf_header = OSPFv3_Hdr(ospf_data[:16])
+                     version = int(ospf_header.version)
+@@ -392,90 +199,51 @@ class OSPFv3Controller(OSPFDiagnosticsMixin, OSPFReceiveMixin, OSPFTransmitMixin
+                     checksum = int(ospf_header.chksum)
+                     instance_id = int(ospf_header.instance)
+                 except (Scapy_Exception, ValueError, TypeError, IndexError) as exc:
+-                    self.logger.warning(
+-                        "[OSPF][DROP] invalid OSPFv3 header: %s", exc
+-                    )
++                    self.logger.warning("[OSPF][DROP] invalid OSPFv3 header: %s", exc)
+                     return
+-
+                 if pkt_len < 16 or pkt_len > len(ospf_data):
+                     return
+-
+                 ospf_for_checksum = bytearray(ospf_data[:pkt_len])
+                 ospf_for_checksum[12:14] = b"\x00\x00"
+-
+                 calculated_checksum = calculate_ospfv3_checksum(
+-                    ipv6_pkt.src,
+-                    ipv6_pkt.dst,
+-                    bytes(ospf_for_checksum)
+-                )   
+-
++                    ipv6_pkt.src, ipv6_pkt.dst, bytes(ospf_for_checksum))
+                 if checksum != calculated_checksum:
+                     self.logger.warning(
+                         "[OSPF][WARN] invalid checksum "
+                         "received=0x%04x calculated=0x%04x",
+-                        checksum,
+-                        calculated_checksum
+-                    )
++                        checksum, calculated_checksum)
+                     return
+-
+                 if area_id_text != cfg.AREA_ID:
+-                    self.logger.warning(
+-                        "[OSPF][DROP] area mismatch "
+-                        "received=%s expected=%s",
+-                        area_id_text,
+-                        cfg.AREA_ID
+-                    )
++                    self.logger.warning("[OSPF][DROP] area mismatch "
++                                        "received=%s expected=%s",
++                                        area_id_text, cfg.AREA_ID)
+                     return
+-
+                 if instance_id != cfg.INSTANCE_ID:
+-                    self.logger.warning(
+-                        "[OSPF][DROP] instance mismatch "
+-                        "received=%d expected=%d",
+-                        instance_id,
+-                        cfg.INSTANCE_ID
+-                    )
++                    self.logger.warning("[OSPF][DROP] instance mismatch "
++                                        "received=%d expected=%d",
++                                        instance_id, cfg.INSTANCE_ID)
+                     return
+-
+                 try:
+-                    ospf_source = ipaddress.IPv6Address(
+-                        ipv6_pkt.src
+-                    )
++                    ospf_source = ipaddress.IPv6Address(ipv6_pkt.src)
+                 except ValueError:
+                     return
+-
+                 if not ospf_source.is_link_local:
+-                    self.logger.warning(
+-                        "[OSPF][DROP] non-link-local source=%s",
+-                        ipv6_pkt.src
+-                    )
++                    self.logger.warning("[OSPF][DROP] non-link-local source=%s",
++                                        ipv6_pkt.src)
+                     return
+-
+                 try:
+-                    ospf_destination = ipaddress.IPv6Address(
+-                        ipv6_pkt.dst
+-                    )
++                    ospf_destination = ipaddress.IPv6Address(ipv6_pkt.dst)
+                 except ValueError:
+                     return
+-
+-                ospf_multicast = (
+-                    ipaddress.IPv6Address("ff02::5"),
+-                    ipaddress.IPv6Address("ff02::6")
+-                )
+-
+-                if (
+-                    ospf_destination in ospf_multicast
+-                    and ipv6_pkt.hop_limit != 1
+-                ):
++                ospf_multicast = (ipaddress.IPv6Address("ff02::5"),
++                                  ipaddress.IPv6Address("ff02::6"))
++                if (ospf_destination in ospf_multicast
++                        and ipv6_pkt.hop_limit != 1):
+                     self.logger.warning(
+                         "[OSPF][DROP] invalid multicast hop-limit "
+                         "dst=%s received=%d expected=1",
+-                        ipv6_pkt.dst,
+-                        ipv6_pkt.hop_limit
+-                    )
++                        ipv6_pkt.dst, ipv6_pkt.hop_limit)
+                     return
+-                
+-                # Dispatch only a valid, sufficiently long OSPFv3 packet.
+-                # Keep the existing per-type handler argument order.
+                 if version == 3:
+                     target = {
+                         1: (36, "handle_ospf_hello"),
+@@ -492,52 +260,3 @@ class OSPFv3Controller(OSPFDiagnosticsMixin, OSPFReceiveMixin, OSPFTransmitMixin
+                         elif pkt_type == 2:
+                             args.insert(4, router_id)
+                         getattr(self, target[1])(*args)
+-
+-
+-    def recompute_routing_state(self):
+-        """
+-        Recalculates SPF and rebuilds the IPv6 routing table
+-        after a relevant LSDB change.
+-        """
+-
+-        new_routes = self.routing.build_ipv6_routing_table()
+-
+-        if new_routes == self.ipv6_routing_table:
+-            self.logger.info(
+-                "[OSPF][ROUTING] recalculated - no route changes"
+-            )
+-            return
+-
+-        self.ipv6_routing_table = new_routes
+-
+-        self.logger.info(
+-            "[OSPF][ROUTING] routing table changed"
+-        )
+-
+-        self.log_spf_result()
+-        self.log_ipv6_routing_table()
+-
+-        for route in self.get_ospf_transit_routes():
+-            self.logger.info(
+-                "[DATA][ROUTE CANDIDATE] %s/%s via=%s",
+-                route["prefix"],
+-                route["prefix_length"],
+-                route["next_hop"]
+-            )
+-
+-        self.try_install_ipv6_host_flows()
+-
+-
+-    def get_ospf_transit_routes(self):
+-        routes = []
+-
+-        for route in self.ipv6_routing_table.values():
+-            if route.get("source") != "ospf":
+-                continue
+-
+-            if route.get("interface") != "transit":
+-                continue
+-
+-            routes.append(route)
+-
+-        return routes

@@ -1,0 +1,27 @@
+{
+  "branch": "uproszczenie-ospfv3",
+  "git_status_after": "M controller_openflow.py\n M ospfv3/controller_timers.py\n M ryu_sdn.py\n?? _migracja/\n?? tests/test_stage01_openflow_contract.py",
+  "git_status_before": "?? _migracja/",
+  "historical_tests_untouched": [
+    "tests/test_c01_openflow_equivalence.py",
+    "tests/test_m03_openflow_architecture.py",
+    "tests/test_w02d_first_packet_forwarding.py"
+  ],
+  "original_sha256": {
+    "controller_openflow.py": "775a0d4f64bcb9bb4e40b3ecc6eac7f2779f26d44116c7d049d64a9cc7c61ed1",
+    "ospfv3/controller_timers.py": "4bc7e28851d1f595ba30cccfeb9bfb8436932a2e6574fac58457adf92b32796e",
+    "ryu_sdn.py": "216ba71979c74c6740b661ac79192b6ee518e5ac5583fbc16235c6fba085ad0f",
+    "tests/test_c01_openflow_equivalence.py": "dbee9eba0a24d4df4c91a3f6ed7c719d9904d51c71db62e3e852f9f71e7a5532",
+    "tests/test_m03_openflow_architecture.py": "74265a263215b184d6049de67c7a131a26ef14c118ebd45fdaf039fdd973ffb7",
+    "tests/test_w02d_first_packet_forwarding.py": "910e2a5c0986e524cfb34a89b5af21006e83e23fec6e69a79fabaf57e3ea84de"
+  },
+  "pin": "e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d",
+  "stage": "01",
+  "status": "applied-awaiting-tests",
+  "target_sha256": {
+    "controller_openflow.py": "be7c836a2154c574834bf0d299cb2c5890dbaebc8a93c97ee54ad5c180018ed3",
+    "ospfv3/controller_timers.py": "c9644dd11834846f7fb102767c30545d9a9c96c824c66ff7f74d31c8aa39a5ca",
+    "ryu_sdn.py": "cc6a8c73f431040c08f54bb88f42b6bbef79587e47639589eb9e7896901a57ca",
+    "tests/test_stage01_openflow_contract.py": "0a03dd1d81986a090557bc5100c9b3d63308347217cb5e3893dc8c86babb24cb"
+  }
+}

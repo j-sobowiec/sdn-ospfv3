@@ -1,0 +1,1993 @@
+{
+  "generated_utc": "2026-11-05T01:18:15.209835+00:00",
+  "project": "/home/jan/Inzynierka_uproszczony",
+  "python_version": "3.12.3",
+  "code_files": 90,
+  "python_files": 85,
+  "python_lines": 23457,
+  "expected_missing": [],
+  "git": {
+    "branch": "uproszczenie-ospfv3",
+    "revision": "e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d",
+    "changes": ""
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 4492,
+      "sha256": "8f848a9a461599871be6853a8706b489dd640f450b876aae036f86f4f7edae94",
+      "lines": 77
+    },
+    {
+      "path": "controller_openflow.py",
+      "bytes": 9877,
+      "sha256": "775a0d4f64bcb9bb4e40b3ecc6eac7f2779f26d44116c7d049d64a9cc7c61ed1",
+      "lines": 380,
+      "syntax": "OK",
+      "classes": [
+        "OpenFlowMixin"
+      ],
+      "functions": [],
+      "imports": [
+        "ipaddress",
+        "ospfv3",
+        "ryu.lib.packet"
+      ]
+    },
+    {
+      "path": "dataplane.py",
+      "bytes": 7890,
+      "sha256": "afca44e7cc85f40fb94be6954f5a30eb293a111ebe8a876e9ff27dd14e846f67",
+      "lines": 312,
+      "syntax": "OK",
+      "classes": [
+        "DataPlane"
+      ],
+      "functions": [],
+      "imports": [
+        "ipaddress",
+        "ospfv3",
+        "ryu.lib.packet"
+      ]
+    },
+    {
+      "path": "docs/ARCHITEKTURA.md",
+      "bytes": 6332,
+      "sha256": "49e15f4743eb56432422c5efaed5975cf9911daf20e39d850bba042ee6800a52",
+      "lines": 95
+    },
+    {
+      "path": "docs/KOMENTARZE.md",
+      "bytes": 3333,
+      "sha256": "9e4faf8c5376798b3eee9055c0cc237334e4445392445d5a1ea44a99a400522e",
+      "lines": 39
+    },
+    {
+      "path": "docs/PRZYGOTOWANIE_PRACY.md",
+      "bytes": 4089,
+      "sha256": "21de674e3f107fd5524f61e6717b0fc05d21e7b78e9fe78f173b6c67eb896c28",
+      "lines": 64
+    },
+    {
+      "path": "docs/WERYFIKACJA.md",
+      "bytes": 5208,
+      "sha256": "9fea6b63f0bf26ecbac8a676fb68ae2eda09747a580070a5bc597f64ef5896b4",
+      "lines": 81
+    },
+    {
+      "path": "ospfv3/__init__.py",
+      "bytes": 34,
+      "sha256": "2b715f76a2c9b07b382926d20ca3ff6befe5fec1be40f8d8d11d434d0cdb7b0a",
+      "lines": 3,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "ospfv3/config.py",
+      "bytes": 613,
+      "sha256": "8c994bbd18a0c87c4d5de2fac0770d9307fd9e62a9c3970410bb543879fabac7",
+      "lines": 38,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "ospfv3/controller_diagnostics.py",
+      "bytes": 8033,
+      "sha256": "4c570eab2b1406ffb99291b44fca275b8653669c6ab46548285edbd08616397d",
+      "lines": 290,
+      "syntax": "OK",
+      "classes": [
+        "OSPFDiagnosticsMixin"
+      ],
+      "functions": [],
+      "imports": [
+        "ipaddress",
+        "ospfv3",
+        "ospfv3.lsa"
+      ]
+    },
+    {
+      "path": "ospfv3/controller_rx.py",
+      "bytes": 18067,
+      "sha256": "eef20bb1b51a59345ae35bd67d2ec0e3ca41f06845bfbad46c838c9edf40979a",
+      "lines": 646,
+      "syntax": "OK",
+      "classes": [
+        "OSPFReceiveMixin"
+      ],
+      "functions": [],
+      "imports": [
+        "ospfv3",
+        "ospfv3.lsa",
+        "ospfv3.parser",
+        "socket",
+        "struct"
+      ]
+    },
+    {
+      "path": "ospfv3/controller_timers.py",
+      "bytes": 4541,
+      "sha256": "4bc7e28851d1f595ba30cccfeb9bfb8436932a2e6574fac58457adf92b32796e",
+      "lines": 140,
+      "syntax": "OK",
+      "classes": [
+        "OSPFTimerMixin"
+      ],
+      "functions": [],
+      "imports": [
+        "ospfv3",
+        "ryu.lib",
+        "time"
+      ]
+    },
+    {
+      "path": "ospfv3/controller_tx.py",
+      "bytes": 8114,
+      "sha256": "547bf4752b48075f67a260722c795954f2a8df6501b09beff31ea65cd309ce4e",
+      "lines": 317,
+      "syntax": "OK",
+      "classes": [
+        "OSPFTransmitMixin"
+      ],
+      "functions": [],
+      "imports": [
+        "ospfv3.lsa",
+        "ospfv3.packet",
+        "struct",
+        "time"
+      ]
+    },
+    {
+      "path": "ospfv3/local_lsa.py",
+      "bytes": 12474,
+      "sha256": "8af103ba055810317851c543a3a47d4c893208ed78fd0fae33001bfc625687bc",
+      "lines": 464,
+      "syntax": "OK",
+      "classes": [
+        "LocalLSA"
+      ],
+      "functions": [],
+      "imports": [
+        "ipaddress",
+        "ospfv3",
+        "ospfv3.lsa",
+        "ospfv3.packet",
+        "scapy.contrib.ospf",
+        "socket",
+        "struct",
+        "time"
+      ]
+    },
+    {
+      "path": "ospfv3/lsa.py",
+      "bytes": 8168,
+      "sha256": "ac478a0f333a33ea79a61b66f32131b6923d3241507dab5681399e96b5604954",
+      "lines": 272,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [
+        "ospfv3_lsa_type_description",
+        "_check_lsa_header",
+        "_check_prefixes",
+        "_decode_lsa",
+        "parse_ospfv3_router_lsa",
+        "parse_ospfv3_link_lsa",
+        "parse_ospfv3_intra_area_prefix_lsa",
+        "lsa_sequence_signed",
+        "compare_lsa_instances",
+        "ospfv3_lsa_checksum",
+        "next_ospfv3_lsa_sequence",
+        "finalize_ospfv3_lsa_checksum"
+      ],
+      "imports": [
+        "ipaddress",
+        "ospfv3",
+        "scapy.contrib.ospf",
+        "struct"
+      ]
+    },
+    {
+      "path": "ospfv3/lsdb.py",
+      "bytes": 4378,
+      "sha256": "77631af12c1591f04c0c03ae65b6ad192f600c32d37bcb0070a211cf82c96df9",
+      "lines": 144,
+      "syntax": "OK",
+      "classes": [
+        "LSDB"
+      ],
+      "functions": [],
+      "imports": [
+        "copy",
+        "ospfv3",
+        "ospfv3.lsa",
+        "time"
+      ]
+    },
+    {
+      "path": "ospfv3/neighbor.py",
+      "bytes": 2747,
+      "sha256": "4eadc2bc65fe4ea6a9e0d6c5e589a4a4cfd05641b3779bd0ac2de7a159ee1d02",
+      "lines": 100,
+      "syntax": "OK",
+      "classes": [
+        "Neighbor"
+      ],
+      "functions": [],
+      "imports": [
+        "ospfv3.lsa",
+        "time"
+      ]
+    },
+    {
+      "path": "ospfv3/packet.py",
+      "bytes": 5098,
+      "sha256": "e2681a57b6369a8dd2c7d317b426e328f4b005808971f8c87295a7a6e771d706",
+      "lines": 185,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [
+        "calculate_ospfv3_checksum",
+        "_serialize_ospf",
+        "build_ospfv3_packet",
+        "build_ospfv3_hello",
+        "build_ospfv3_dbd",
+        "build_ospfv3_lsr",
+        "encode_ospfv3_lsu_body",
+        "build_ospfv3_lsu",
+        "build_ospfv3_lsack",
+        "build_ospfv3_frame",
+        "build_ospfv3_hello_frame",
+        "build_ospfv3_dbd_frame",
+        "build_ospfv3_lsr_frame",
+        "build_ospfv3_lsu_frame",
+        "build_ospfv3_lsack_frame"
+      ],
+      "imports": [
+        "ospfv3",
+        "scapy.contrib.ospf",
+        "scapy.layers.inet6",
+        "scapy.layers.l2",
+        "scapy.packet"
+      ]
+    },
+    {
+      "path": "ospfv3/parser.py",
+      "bytes": 7778,
+      "sha256": "cdab10f49cc6102cbdb470d4ebcf81e2aa349f39deed8c8b37e4bd61e592447f",
+      "lines": 219,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [
+        "_packet_bytes",
+        "_decode_packet",
+        "_lsa_header_fields",
+        "_parse_lsa_header",
+        "parse_hello",
+        "parse_dbd",
+        "parse_lsr",
+        "parse_lsu",
+        "parse_lsack"
+      ],
+      "imports": [
+        "ipaddress",
+        "ospfv3.lsa",
+        "scapy.contrib.ospf",
+        "scapy.error",
+        "struct"
+      ]
+    },
+    {
+      "path": "ospfv3/routing.py",
+      "bytes": 7262,
+      "sha256": "3f2ad2ddcea9c234d26e55b7bd1fcc6ce0c61ec1daae8ca9382c7a9aed649a68",
+      "lines": 180,
+      "syntax": "OK",
+      "classes": [
+        "Routing"
+      ],
+      "functions": [],
+      "imports": [
+        "heapq",
+        "ospfv3"
+      ]
+    },
+    {
+      "path": "ospfv3_baseline_tests.py",
+      "bytes": 4522,
+      "sha256": "5aa60488dcd511a4cd3bd3c28d25972a3e44ddced59c1afe1c1a8d2c43c4f0ad",
+      "lines": 132,
+      "syntax": "OK",
+      "classes": [
+        "FakeLSDB",
+        "CodecBaselineTests"
+      ],
+      "functions": [],
+      "imports": [
+        "hashlib",
+        "logging",
+        "ospfv3",
+        "ospfv3.local_lsa",
+        "ospfv3.packet",
+        "ospfv3.parser",
+        "socket",
+        "struct",
+        "unittest"
+      ]
+    },
+    {
+      "path": "ospfv3_independent_audit.py",
+      "bytes": 9242,
+      "sha256": "8be0cfd5c56113ce04202f4b84842e81b03cdbf115a175d1299af50ddff3b60b",
+      "lines": 205,
+      "syntax": "OK",
+      "classes": [
+        "FakeLSDB",
+        "IndependentAuditTests"
+      ],
+      "functions": [
+        "ipv6",
+        "check_internet_checksum",
+        "valid_ospfv3_checksum",
+        "fletcher_ok"
+      ],
+      "imports": [
+        "logging",
+        "ospfv3",
+        "ospfv3.local_lsa",
+        "ospfv3.packet",
+        "ospfv3.parser",
+        "socket",
+        "struct",
+        "unittest"
+      ]
+    },
+    {
+      "path": "run_ryu.py",
+      "bytes": 128,
+      "sha256": "dbff050a5bd5fec946f65581ff1c9f27aeaa21245b3720a68c980c3b51ec44e1",
+      "lines": 11,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "eventlet",
+        "ryu.cmd.manager"
+      ]
+    },
+    {
+      "path": "ryu_sdn.py",
+      "bytes": 17174,
+      "sha256": "216ba71979c74c6740b661ac79192b6ee518e5ac5583fbc16235c6fba085ad0f",
+      "lines": 543,
+      "syntax": "OK",
+      "classes": [
+        "OSPFv3Controller"
+      ],
+      "functions": [],
+      "imports": [
+        "controller_openflow",
+        "dataplane",
+        "ipaddress",
+        "ospfv3",
+        "ospfv3.controller_diagnostics",
+        "ospfv3.controller_rx",
+        "ospfv3.controller_timers",
+        "ospfv3.controller_tx",
+        "ospfv3.local_lsa",
+        "ospfv3.lsdb",
+        "ospfv3.neighbor",
+        "ospfv3.packet",
+        "ospfv3.routing",
+        "ryu.base",
+        "ryu.controller",
+        "ryu.controller.handler",
+        "ryu.lib",
+        "ryu.lib.packet",
+        "ryu.ofproto",
+        "scapy.contrib.ospf",
+        "scapy.error"
+      ]
+    },
+    {
+      "path": "test_parser_scapy.py",
+      "bytes": 9553,
+      "sha256": "23826ab65c474978fbddb7e3b947ade79ddca35d2a151d93bf7765f2c7006169",
+      "lines": 224,
+      "syntax": "OK",
+      "classes": [
+        "LSDBFixture",
+        "ParserScapyTests"
+      ],
+      "functions": [
+        "router_id",
+        "ospf_packet",
+        "lsa_header"
+      ],
+      "imports": [
+        "logging",
+        "ospfv3",
+        "ospfv3.local_lsa",
+        "ospfv3.parser",
+        "socket",
+        "struct",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/_a02_topology_reference.py",
+      "bytes": 7685,
+      "sha256": "87bbf86cb1f09eb317b82adb2ea95585c4c86b79487613c74c9e762bdbb098a2",
+      "lines": 263,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [
+        "write_file",
+        "make_frr_config",
+        "configure_router",
+        "start_frr",
+        "main"
+      ],
+      "imports": [
+        "mininet.cli",
+        "mininet.log",
+        "mininet.net",
+        "mininet.node",
+        "os",
+        "shlex",
+        "time"
+      ]
+    },
+    {
+      "path": "tests/_c01_original_flow_methods.py",
+      "bytes": 10096,
+      "sha256": "5d07c0d3a25c731f9de3e1c305d99194096167934cb1dc0b88bed8ed0c193419",
+      "lines": 404,
+      "syntax": "OK",
+      "classes": [
+        "OriginalFlowMethods"
+      ],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_c02_dataplane_reference.py",
+      "bytes": 7928,
+      "sha256": "f7a6e38cca1e7decec335047c9a732ce85c1c0e55d1d2f746aa48b8896cf4fda",
+      "lines": 338,
+      "syntax": "OK",
+      "classes": [
+        "DataPlane"
+      ],
+      "functions": [],
+      "imports": [
+        "ipaddress",
+        "ospfv3",
+        "ryu.lib.packet"
+      ]
+    },
+    {
+      "path": "tests/_c03_packet_in_reference.py",
+      "bytes": 11855,
+      "sha256": "b8d4fce935bc45ea6168256b066fe6f0a5b0e5571dcd79c4b1d6233ffada03c6",
+      "lines": 345,
+      "syntax": "OK",
+      "classes": [
+        "OSPFv3Controller"
+      ],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_c04_ospf_tx_reference.py",
+      "bytes": 7496,
+      "sha256": "26b43adccfbdba21b478128bc687eb44f3fcfb7ab6cd737e44d226112610bef7",
+      "lines": 322,
+      "syntax": "OK",
+      "classes": [
+        "OriginalTX"
+      ],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_c05_ospf_rx_reference.py",
+      "bytes": 9938,
+      "sha256": "faf80689d92155608a9cafc1b3f0f504e80c422f398e3ffc3a22d11588e0a3a4",
+      "lines": 153,
+      "syntax": "OK",
+      "classes": [
+        "OriginalRX"
+      ],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_c06_recovery_reference.py",
+      "bytes": 2525,
+      "sha256": "ab1eeabd37f71be1a22d43a47135fcf83e7d93c6a1f7e629417e3c2c61e7fad2",
+      "lines": 102,
+      "syntax": "OK",
+      "classes": [
+        "OriginalRecovery"
+      ],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_c07_logging_reference.py",
+      "bytes": 1721,
+      "sha256": "d8e59b8f9ae4a84cee5e5a9c4c7277f10140e6014f8d3826d829b45557adee4d",
+      "lines": 33,
+      "syntax": "OK",
+      "classes": [
+        "LoggingReference"
+      ],
+      "functions": [
+        "ospfv3_lsa_type_description"
+      ],
+      "imports": [
+        "types"
+      ]
+    },
+    {
+      "path": "tests/_d02_local_lsa_reference.py",
+      "bytes": 13046,
+      "sha256": "e6b20800de85b63923eb34fbe976188c2a311e2bbeed25c9e5ecba6c4d4f3331",
+      "lines": 502,
+      "syntax": "OK",
+      "classes": [
+        "LocalLSA"
+      ],
+      "functions": [],
+      "imports": [
+        "ipaddress",
+        "ospfv3",
+        "ospfv3.lsa",
+        "scapy.contrib.ospf",
+        "socket",
+        "struct",
+        "time"
+      ]
+    },
+    {
+      "path": "tests/_d03_lsdb_reference.py",
+      "bytes": 5540,
+      "sha256": "16f65cdbd5a7c51e267a1b9c5a2294af3bd37b5ee3812c65941a2f1949d78a65",
+      "lines": 201,
+      "syntax": "OK",
+      "classes": [
+        "LSDB"
+      ],
+      "functions": [],
+      "imports": [
+        "ospfv3",
+        "ospfv3.lsa",
+        "time"
+      ]
+    },
+    {
+      "path": "tests/_d04_neighbor_reference.py",
+      "bytes": 3083,
+      "sha256": "b28d619d8b192996d83aa34c3fdc16bea99acdd9640e9a8368319eed650753d8",
+      "lines": 125,
+      "syntax": "OK",
+      "classes": [
+        "Neighbor"
+      ],
+      "functions": [],
+      "imports": [
+        "ospfv3.lsa",
+        "time"
+      ]
+    },
+    {
+      "path": "tests/_d05_routing_reference.py",
+      "bytes": 8366,
+      "sha256": "d8bcf147ffc7fac457ed179a056bf8853a5be99e57745bd224534c81b2f9569a",
+      "lines": 295,
+      "syntax": "OK",
+      "classes": [
+        "Routing"
+      ],
+      "functions": [],
+      "imports": [
+        "heapq",
+        "ospfv3"
+      ]
+    },
+    {
+      "path": "tests/_m01_diagnostics_reference.py",
+      "bytes": 7717,
+      "sha256": "226a5752d303692ad6a0a3ee905f174f792878ffab6315690ee18c5ef885e431",
+      "lines": 279,
+      "syntax": "OK",
+      "classes": [
+        "OriginalDiagnostics"
+      ],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_m02_lsu_reference.py",
+      "bytes": 1298,
+      "sha256": "3e0f345f9d3c41f051aece1958f5ad2528b72d1064d46dcd5ae9d4e8d8c97b37",
+      "lines": 61,
+      "syntax": "OK",
+      "classes": [
+        "OriginalLocalLSA"
+      ],
+      "functions": [],
+      "imports": [
+        "struct"
+      ]
+    },
+    {
+      "path": "tests/_m03_openflow_reference.py",
+      "bytes": 9514,
+      "sha256": "c6cb66b9b4c25078eb6d8f7fc0c2108e942afd2456bb888ad80112ff67a1181e",
+      "lines": 366,
+      "syntax": "OK",
+      "classes": [
+        "OriginalOpenFlow"
+      ],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_m04_rx_reference.py",
+      "bytes": 17546,
+      "sha256": "698951f63638410149b597ecaa822f17abe3e983762bb9724fbc9b027ea000f6",
+      "lines": 630,
+      "syntax": "OK",
+      "classes": [
+        "OriginalRX"
+      ],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_m05_transport_reference.py",
+      "bytes": 11850,
+      "sha256": "ac037a7ea08869af92fc868ea9b64a13bad9b5c598000a180c8e55b0a2a1b46c",
+      "lines": 426,
+      "syntax": "OK",
+      "classes": [
+        "OriginalTX",
+        "OriginalTimers"
+      ],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_s04_parser_reference.py",
+      "bytes": 8242,
+      "sha256": "6ae792bca40145d90c28ad82ec78715d843bd5763f4c30804b4df1e55b1a9490",
+      "lines": 230,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [
+        "_packet_bytes",
+        "_decode_packet",
+        "_lsa_header_fields",
+        "_parse_lsa_header",
+        "parse_hello",
+        "parse_dbd",
+        "parse_lsr",
+        "parse_lsu",
+        "parse_lsack"
+      ],
+      "imports": [
+        "ipaddress",
+        "ospfv3.lsa",
+        "scapy.contrib.ospf",
+        "scapy.error",
+        "struct"
+      ]
+    },
+    {
+      "path": "tests/_w02a_ndp_reference.py",
+      "bytes": 13940,
+      "sha256": "b3b9102ead3adf96778916723b6e2882a3dfc721093f6aa124baff7e5a7d8619",
+      "lines": 5,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/_w02b_lsdb_reference.py",
+      "bytes": 4357,
+      "sha256": "ad9cacba85a8510a36cf083fea3ea4117f3887b0a98a3ff7ff2f9c8a127eb87a",
+      "lines": 143,
+      "syntax": "OK",
+      "classes": [
+        "LSDB"
+      ],
+      "functions": [],
+      "imports": [
+        "ospfv3",
+        "ospfv3.lsa",
+        "time"
+      ]
+    },
+    {
+      "path": "tests/_w02c_routing_reference.py",
+      "bytes": 6610,
+      "sha256": "459fe785daef6c17dee034be87dd7c007c3fab63176b3912d29f52904a7a71ef",
+      "lines": 168,
+      "syntax": "OK",
+      "classes": [
+        "Routing"
+      ],
+      "functions": [],
+      "imports": [
+        "heapq",
+        "ospfv3"
+      ]
+    },
+    {
+      "path": "tests/_w02d_packetin_reference.py",
+      "bytes": 11522,
+      "sha256": "a5b11c17d5f4c2cb364d9c27686be25f9e3244e00b9862be68d5596276fe4e7a",
+      "lines": 3,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [],
+      "imports": []
+    },
+    {
+      "path": "tests/b5_3_harness.py",
+      "bytes": 7498,
+      "sha256": "b888ad856350941991fe8e1a03cd040c7bd4a32c94b08e837577dfb91b77666c",
+      "lines": 195,
+      "syntax": "OK",
+      "classes": [
+        "Wire",
+        "Ether",
+        "IP6",
+        "ICMP",
+        "ND",
+        "Echo",
+        "TLA",
+        "Pkt",
+        "OFMsg",
+        "OFParser",
+        "Switch"
+      ],
+      "functions": [
+        "incoming",
+        "load_class",
+        "make_controller",
+        "flowmods",
+        "ns",
+        "packet_in"
+      ],
+      "imports": [
+        "ast",
+        "copy",
+        "ipaddress",
+        "logging",
+        "os",
+        "pathlib",
+        "runpy",
+        "socket",
+        "struct",
+        "time",
+        "types"
+      ]
+    },
+    {
+      "path": "tests/diagnose_b5_1_known_issues.py",
+      "bytes": 2176,
+      "sha256": "4fc6f087a437f8ec1718d18acd008273b877b70118438f4264884c9596189cfe",
+      "lines": 54,
+      "syntax": "OK",
+      "classes": [
+        "TestObservedLimitations"
+      ],
+      "functions": [],
+      "imports": [
+        "logging",
+        "ospfv3.lsdb",
+        "ospfv3.routing",
+        "test_lsdb_spf_b5_1",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/diagnose_b5_3_known_issues.py",
+      "bytes": 1777,
+      "sha256": "61cafa121cee20c1e1adabea79cf1fadf4b8f58638e4643e04d0345aa4c6fd79",
+      "lines": 38,
+      "syntax": "OK",
+      "classes": [
+        "TestKnownIssues"
+      ],
+      "functions": [],
+      "imports": [
+        "b5_3_harness",
+        "test_dataplane_b5_3",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/local_lsa_before_scapy.py",
+      "bytes": 14402,
+      "sha256": "5088d11e871e397e83d6262c7b2f2b7a47b9235c1e357067a9f17c4fb29d77c8",
+      "lines": 585,
+      "syntax": "OK",
+      "classes": [
+        "LocalLSA"
+      ],
+      "functions": [],
+      "imports": [
+        "ipaddress",
+        "ospfv3",
+        "ospfv3.lsa",
+        "socket",
+        "struct",
+        "time"
+      ]
+    },
+    {
+      "path": "tests/lsa_before_scapy.py",
+      "bytes": 11733,
+      "sha256": "43e8cd74aeaa40f7522c0cb0b5a892173def7e3bc41fa0a8b0ff085104440799",
+      "lines": 505,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [
+        "ospfv3_lsa_type_description",
+        "parse_ospfv3_router_lsa",
+        "parse_ospfv3_link_lsa",
+        "parse_ospfv3_intra_area_prefix_lsa",
+        "lsa_sequence_signed",
+        "compare_lsa_instances",
+        "ospfv3_lsa_checksum",
+        "next_ospfv3_lsa_sequence",
+        "finalize_ospfv3_lsa_checksum"
+      ],
+      "imports": [
+        "ospfv3",
+        "socket",
+        "struct"
+      ]
+    },
+    {
+      "path": "tests/ryu_sdn_before_b4.py",
+      "bytes": 66481,
+      "sha256": "3a5623f2ab64c6d804a13dc97a4fb907ac673488ac31aa5db0736cb7f1e25656",
+      "lines": 2441,
+      "syntax": "OK",
+      "classes": [
+        "OSPFv3Controller"
+      ],
+      "functions": [],
+      "imports": [
+        "dataplane",
+        "ipaddress",
+        "ospfv3",
+        "ospfv3.local_lsa",
+        "ospfv3.lsa",
+        "ospfv3.lsdb",
+        "ospfv3.neighbor",
+        "ospfv3.packet",
+        "ospfv3.parser",
+        "ospfv3.routing",
+        "ryu.base",
+        "ryu.controller",
+        "ryu.controller.handler",
+        "ryu.lib",
+        "ryu.lib.packet",
+        "ryu.ofproto",
+        "socket",
+        "struct",
+        "time"
+      ]
+    },
+    {
+      "path": "tests/test_a02_topology_equivalence.py",
+      "bytes": 12292,
+      "sha256": "995fd08d86dd1e5a2227437c680d4a3b54de22cadce81693a75743bfc3f37b32",
+      "lines": 286,
+      "syntax": "OK",
+      "classes": [
+        "SimulatedFailure",
+        "OvsSwitch",
+        "RemoteController",
+        "TestA02TopologyEquivalence"
+      ],
+      "functions": [
+        "_load",
+        "_simulate"
+      ],
+      "imports": [
+        "ast",
+        "inspect",
+        "os",
+        "pathlib",
+        "random",
+        "shlex",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_c01_openflow_equivalence.py",
+      "bytes": 11422,
+      "sha256": "dbee9eba0a24d4df4c91a3f6ed7c719d9904d51c71db62e3e852f9f71e7a5532",
+      "lines": 281,
+      "syntax": "OK",
+      "classes": [
+        "ReferenceController",
+        "recording_logger",
+        "TestC01FlowModEquivalence"
+      ],
+      "functions": [
+        "new_pair",
+        "canon",
+        "snapshot",
+        "compare"
+      ],
+      "imports": [
+        "b5_3_harness",
+        "pathlib",
+        "random",
+        "ryu.ofproto",
+        "types",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_c02_dataplane_equivalence.py",
+      "bytes": 12672,
+      "sha256": "5c912530bf5aacfb08be5dd8f63b69b79ea93a17a5bcb0969faef243bcb1b951",
+      "lines": 260,
+      "syntax": "OK",
+      "classes": [
+        "TestC02StubEquivalence",
+        "TestC02RealRyu"
+      ],
+      "functions": [
+        "freeze",
+        "outcome",
+        "ndp_input",
+        "echo_input"
+      ],
+      "imports": [
+        "ast",
+        "b5_3_harness",
+        "importlib.util",
+        "inspect",
+        "ipaddress",
+        "pathlib",
+        "random",
+        "ryu.lib.packet",
+        "sys",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_c03_packet_in_equivalence.py",
+      "bytes": 16432,
+      "sha256": "0055ebd0bcd67cc94690630e80088d9076f493f275e488faec2563d8609734b4",
+      "lines": 405,
+      "syntax": "OK",
+      "classes": [
+        "DummyEthernet",
+        "DummyIPv6",
+        "ScapyError",
+        "OSPFHeaderStub",
+        "Pkt",
+        "FakeLogger",
+        "OpenFlowParser",
+        "FakeSwitch",
+        "FakeDataPlane",
+        "FakeController",
+        "TestC03PacketInEquivalence"
+      ],
+      "functions": [
+        "wire",
+        "exact_method"
+      ],
+      "imports": [
+        "ast",
+        "copy",
+        "ipaddress",
+        "pathlib",
+        "random",
+        "scapy.contrib.ospf",
+        "scapy.error",
+        "struct",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_c04_ospf_tx_equivalence.py",
+      "bytes": 12083,
+      "sha256": "a9d796765d58c89f0809b8dff72b72a162198845afa3e991479b2f9ab70909e7",
+      "lines": 286,
+      "syntax": "OK",
+      "classes": [
+        "LocalLSA",
+        "Logger",
+        "Case",
+        "TestC04Differential"
+      ],
+      "functions": [
+        "selected_class",
+        "lsa",
+        "invoke"
+      ],
+      "imports": [
+        "ast",
+        "copy",
+        "inspect",
+        "ipaddress",
+        "ospfv3",
+        "pathlib",
+        "random",
+        "scapy.contrib.ospf",
+        "struct",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_c05_ospf_rx_equivalence.py",
+      "bytes": 14972,
+      "sha256": "ab5289b0c45d0d836418f548512f86605c94d742c18e69840c2e5042f8bbc7d3",
+      "lines": 332,
+      "syntax": "OK",
+      "classes": [
+        "Logged",
+        "RXNeighbor",
+        "RXLocalLSA",
+        "RXLSDB",
+        "TestC05RXEquivalence"
+      ],
+      "functions": [
+        "extract",
+        "sample_lsa",
+        "invoke"
+      ],
+      "imports": [
+        "ast",
+        "copy",
+        "hashlib",
+        "inspect",
+        "ipaddress",
+        "ospfv3",
+        "ospfv3.config",
+        "pathlib",
+        "random",
+        "scapy.contrib.ospf",
+        "socket",
+        "struct",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_c06_recovery_equivalence.py",
+      "bytes": 12849,
+      "sha256": "720422f09e12a886228ba16e3570be88f06c9865e0fd69b8b1e84a846b3d8345",
+      "lines": 302,
+      "syntax": "OK",
+      "classes": [
+        "StopLoop",
+        "FakeHub",
+        "FakeTime",
+        "FakeLogger",
+        "FakeLSDB",
+        "TestC06RecoveryEquivalence"
+      ],
+      "functions": [
+        "extract",
+        "invoke"
+      ],
+      "imports": [
+        "ast",
+        "copy",
+        "hashlib",
+        "inspect",
+        "math",
+        "pathlib",
+        "random",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_c07_logging_equivalence.py",
+      "bytes": 9481,
+      "sha256": "24310a081137d44c35c1cb84a4e0a6b30a9f4749fcf6a748a16466159b9149f6",
+      "lines": 238,
+      "syntax": "OK",
+      "classes": [
+        "EventRecorder",
+        "RoutingRecorder",
+        "TracingFlag",
+        "TestC07LoggingEquivalence"
+      ],
+      "functions": [
+        "current_logging_class",
+        "run_dbd",
+        "run_spf"
+      ],
+      "imports": [
+        "_c07_logging_reference",
+        "ast",
+        "inspect",
+        "pathlib",
+        "random",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_d02_local_lsa_equivalence.py",
+      "bytes": 7000,
+      "sha256": "d5b579cfc226e13baace9a95c896f7c63c3da1c26e4b215b654cda6e5a3e50a0",
+      "lines": 169,
+      "syntax": "OK",
+      "classes": [
+        "FakeLSDB",
+        "D02HeaderEquivalence"
+      ],
+      "functions": [
+        "load_reference",
+        "pair"
+      ],
+      "imports": [
+        "importlib.util",
+        "ipaddress",
+        "logging",
+        "ospfv3",
+        "ospfv3.local_lsa",
+        "pathlib",
+        "random",
+        "scapy.contrib.ospf",
+        "socket",
+        "struct",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_d03_lsdb_equivalence.py",
+      "bytes": 11394,
+      "sha256": "dfa421b3caef41a376fa8b4582dd4c810f3107fac9ae63aa04889e4d810679d0",
+      "lines": 256,
+      "syntax": "OK",
+      "classes": [
+        "LogCapture",
+        "Clock",
+        "PairedLSDB"
+      ],
+      "functions": [
+        "make_lsa"
+      ],
+      "imports": [
+        "_d03_lsdb_reference",
+        "copy",
+        "ospfv3",
+        "ospfv3.lsdb",
+        "ospfv3.routing",
+        "random",
+        "types",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_d04_neighbor_equivalence.py",
+      "bytes": 10963,
+      "sha256": "b249773ea2ae196a6581a692990652ff75cf5a81aceb79953d320dd7076ee973",
+      "lines": 242,
+      "syntax": "OK",
+      "classes": [
+        "TestD04Differential"
+      ],
+      "functions": [
+        "lsa"
+      ],
+      "imports": [
+        "_d04_neighbor_reference",
+        "copy",
+        "logging",
+        "ospfv3",
+        "ospfv3.lsa",
+        "ospfv3.neighbor",
+        "random",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_d05_routing_equivalence.py",
+      "bytes": 10928,
+      "sha256": "dbcbeb168789178049b86453b18ed7721c20c7be38b63fce2bfbf83ac43d11f2",
+      "lines": 258,
+      "syntax": "OK",
+      "classes": [
+        "FixtureDB",
+        "TestD05Differential"
+      ],
+      "functions": [
+        "router_lsa",
+        "link",
+        "prefix_lsa",
+        "other_lsa",
+        "reciprocal_reference_graph"
+      ],
+      "imports": [
+        "_d05_routing_reference",
+        "copy",
+        "itertools",
+        "ospfv3",
+        "ospfv3.routing",
+        "random",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_dataplane_b5_3.py",
+      "bytes": 10242,
+      "sha256": "b630e2f2d620772c0b4fa73d56a1adc08a7e6d1a1ad4dcdf7c8783e8131a5030",
+      "lines": 245,
+      "syntax": "OK",
+      "classes": [
+        "TestLearning",
+        "TestNDP",
+        "TestEcho"
+      ],
+      "functions": [
+        "make_ndp"
+      ],
+      "imports": [
+        "b5_3_harness",
+        "ipaddress",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_local_lsa_scapy.py",
+      "bytes": 13513,
+      "sha256": "2b00929ecc2b16f77c677176da784b81bf3b633cf34240c81543da7929303cd7",
+      "lines": 305,
+      "syntax": "OK",
+      "classes": [
+        "FakeLSDB",
+        "TestWireFormat",
+        "TestExistingProtocolSemantics"
+      ],
+      "functions": [
+        "load_reference",
+        "new_pair",
+        "lsa_header",
+        "fletcher_residue"
+      ],
+      "imports": [
+        "hashlib",
+        "importlib.util",
+        "ipaddress",
+        "logging",
+        "ospfv3",
+        "ospfv3.local_lsa",
+        "ospfv3.lsa",
+        "pathlib",
+        "socket",
+        "struct",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_lsa_checksum_b2b.py",
+      "bytes": 7509,
+      "sha256": "4c7725973dc3cdfef0e25c95ebcd0d423acb49c4319314dc569f6ee8d74003af",
+      "lines": 220,
+      "syntax": "OK",
+      "classes": [
+        "TestValidLSAChecksums",
+        "TestInvalidLSAChecksums"
+      ],
+      "functions": [
+        "checksum_residue",
+        "make_valid_checksum",
+        "ipv4",
+        "lsa_header",
+        "router_lsa",
+        "link_lsa",
+        "intra_lsa",
+        "unknown_lsa",
+        "lsu_packet",
+        "decode",
+        "altered"
+      ],
+      "imports": [
+        "ipaddress",
+        "ospfv3.lsa",
+        "ospfv3.parser",
+        "socket",
+        "struct",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_lsa_scapy.py",
+      "bytes": 9275,
+      "sha256": "3169be1469e97b3cf1eaab598f42282f4962b408684f23bd0e35f6e375253d25",
+      "lines": 250,
+      "syntax": "OK",
+      "classes": [
+        "FakeLSDB",
+        "TestPositiveLSA",
+        "TestMalformedLSA"
+      ],
+      "functions": [
+        "load_reference",
+        "header",
+        "router_link",
+        "prefix_item",
+        "make_router",
+        "make_link",
+        "make_intra"
+      ],
+      "imports": [
+        "importlib.util",
+        "ipaddress",
+        "logging",
+        "ospfv3",
+        "ospfv3.local_lsa",
+        "pathlib",
+        "socket",
+        "struct",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_lsdb_spf_b5_1.py",
+      "bytes": 23335,
+      "sha256": "8bba964b7ab3ac6c7f96c93d93dbef19433f70f091237fa34517b1a27097651e",
+      "lines": 509,
+      "syntax": "OK",
+      "classes": [
+        "BaseCase",
+        "TestLSDBInstallAndInstances",
+        "TestLSDBAgeAndClear",
+        "TestSequenceComparator",
+        "TestSPFAndIPv6Routing"
+      ],
+      "functions": [
+        "link",
+        "lsa",
+        "router_lsa",
+        "prefix_lsa",
+        "link_lsa",
+        "key",
+        "put",
+        "triangle"
+      ],
+      "imports": [
+        "copy",
+        "logging",
+        "ospfv3",
+        "ospfv3.lsa",
+        "ospfv3.lsdb",
+        "ospfv3.routing",
+        "random",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_m01_diagnostics_architecture.py",
+      "bytes": 11425,
+      "sha256": "b72783875ab944b91b9344d7252c0a960b72ab7de6be1d6252773009ddd87e87",
+      "lines": 258,
+      "syntax": "OK",
+      "classes": [
+        "LogRecorder",
+        "SPFRecorder",
+        "TestM01Architecture"
+      ],
+      "functions": [
+        "class_node",
+        "method_nodes",
+        "isolated_class",
+        "invoke"
+      ],
+      "imports": [
+        "ast",
+        "copy",
+        "importlib.util",
+        "inspect",
+        "ipaddress",
+        "ospfv3.controller_diagnostics",
+        "pathlib",
+        "random",
+        "ryu_sdn",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_m02_scapy_lsu_equivalence.py",
+      "bytes": 12362,
+      "sha256": "173e8c6322fc508005d3416b6e3d3fa2ef583d3a61619f1db07e639f5522cff3",
+      "lines": 286,
+      "syntax": "OK",
+      "classes": [
+        "StubRaw",
+        "StubLSUpd",
+        "TestM02Offline",
+        "TestM02RealScapy"
+      ],
+      "functions": [
+        "frozen_methods",
+        "isolated_codec",
+        "scenario",
+        "call",
+        "rand_lsa"
+      ],
+      "imports": [
+        "_m02_lsu_reference",
+        "ast",
+        "copy",
+        "hashlib",
+        "importlib",
+        "inspect",
+        "logging",
+        "ospfv3",
+        "pathlib",
+        "random",
+        "scapy",
+        "scapy.contrib.ospf",
+        "scapy.packet",
+        "struct",
+        "sys",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_m03_openflow_architecture.py",
+      "bytes": 9932,
+      "sha256": "74265a263215b184d6049de67c7a131a26ef14c118ebd45fdaf039fdd973ffb7",
+      "lines": 216,
+      "syntax": "OK",
+      "classes": [
+        "OldController",
+        "Log",
+        "TestM03Architecture"
+      ],
+      "functions": [
+        "get_class",
+        "method_map",
+        "canon",
+        "state",
+        "pair",
+        "compare"
+      ],
+      "imports": [
+        "ast",
+        "b5_3_harness",
+        "controller_openflow",
+        "copy",
+        "importlib.util",
+        "inspect",
+        "ospfv3.controller_diagnostics",
+        "ospfv3.controller_rx",
+        "ospfv3.controller_timers",
+        "ospfv3.controller_tx",
+        "pathlib",
+        "random",
+        "ryu_sdn",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_m04_rx_architecture.py",
+      "bytes": 12548,
+      "sha256": "fcbeadb2652ad2aa45e0bb96639203f8a5badc8b538b4e41a830853dbc054ef8",
+      "lines": 258,
+      "syntax": "OK",
+      "classes": [
+        "Logger",
+        "Neighbor",
+        "DataPlane",
+        "TestM04Architecture"
+      ],
+      "functions": [
+        "klass",
+        "methods",
+        "_isolated_code",
+        "isolated",
+        "hello_run"
+      ],
+      "imports": [
+        "ast",
+        "controller_openflow",
+        "copy",
+        "functools",
+        "hashlib",
+        "importlib.util",
+        "inspect",
+        "ipaddress",
+        "ospfv3.controller_diagnostics",
+        "ospfv3.controller_rx",
+        "ospfv3.controller_timers",
+        "ospfv3.controller_tx",
+        "pathlib",
+        "random",
+        "ryu.base.app_manager",
+        "ryu_sdn",
+        "socket",
+        "struct",
+        "test_c05_ospf_rx_equivalence",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_m05_tx_timers_architecture.py",
+      "bytes": 14812,
+      "sha256": "035cbaae051e7fd081b570911ce523dedaa0240081398dce9a6cee3e2a5ec784",
+      "lines": 264,
+      "syntax": "OK",
+      "classes": [
+        "TestM05Architecture"
+      ],
+      "functions": [
+        "classnode",
+        "methodmap",
+        "same",
+        "recovery_code"
+      ],
+      "imports": [
+        "ast",
+        "controller_openflow",
+        "copy",
+        "hashlib",
+        "importlib.util",
+        "inspect",
+        "ospfv3.controller_diagnostics",
+        "ospfv3.controller_rx",
+        "ospfv3.controller_timers",
+        "ospfv3.controller_tx",
+        "pathlib",
+        "random",
+        "ryu.base.app_manager",
+        "ryu_sdn",
+        "test_c04_ospf_tx_equivalence",
+        "test_c06_recovery_equivalence",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_neighbor_b5_2.py",
+      "bytes": 18864,
+      "sha256": "cf30448dcff6eed77df454995042fcc5a9b50b5d5a5448a4fc96068bea295060",
+      "lines": 436,
+      "syntax": "OK",
+      "classes": [
+        "NeighborBase",
+        "TestInitialization",
+        "TestHelloDeadTimer",
+        "TestDBDExchangeReset",
+        "TestRequestListIdentity",
+        "TestRequestListInstanceOrdering",
+        "TestRequestListBatchAndLogging",
+        "TestAdjacencyReset"
+      ],
+      "functions": [
+        "summary",
+        "identify"
+      ],
+      "imports": [
+        "copy",
+        "logging",
+        "ospfv3",
+        "ospfv3.lsa",
+        "ospfv3.neighbor",
+        "random",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_openflow_b5_3.py",
+      "bytes": 16415,
+      "sha256": "e21587e30af08f5fd9fcc6d2a445fc45dbc65a5562521f29b8d48171c851af73",
+      "lines": 345,
+      "syntax": "OK",
+      "classes": [
+        "TestFlowPreconditions",
+        "TestFlowDetails",
+        "TestPacketInAndBarrier",
+        "StopAfterOneIteration",
+        "TestLifecycleAndFailure"
+      ],
+      "functions": [
+        "route"
+      ],
+      "imports": [
+        "b5_3_harness",
+        "types",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_parser_scapy.py",
+      "bytes": 9657,
+      "sha256": "706fc2a66b7d2891779659d0d34120fe97aa0bf4610fff71debdeaa1ee6daf23",
+      "lines": 227,
+      "syntax": "OK",
+      "classes": [
+        "LSDBFixture",
+        "ParserScapyTests"
+      ],
+      "functions": [
+        "router_id",
+        "ospf_packet",
+        "lsa_header"
+      ],
+      "imports": [
+        "logging",
+        "ospfv3",
+        "ospfv3.local_lsa",
+        "ospfv3.lsa",
+        "ospfv3.parser",
+        "socket",
+        "struct",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_ryu_sdn_header_b4.py",
+      "bytes": 11406,
+      "sha256": "d699faf39d6321c6b921377a57b09d16e0ebd9a3e96bb3a60ad2c9c9778f1ab1",
+      "lines": 286,
+      "syntax": "OK",
+      "classes": [
+        "DummyEthernet",
+        "DummyIPv6",
+        "RyuPacketStub",
+        "TestB4Handler"
+      ],
+      "functions": [
+        "load_exact_packet_in"
+      ],
+      "imports": [
+        "ast",
+        "copy",
+        "ipaddress",
+        "pathlib",
+        "scapy.contrib.ospf",
+        "scapy.error",
+        "socket",
+        "struct",
+        "types",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_ryu_wire_b5_3.py",
+      "bytes": 2453,
+      "sha256": "dd3512569c6790fe89b7a6fbc63f9ac2d9cc56105036fa63d0096673a1455bab",
+      "lines": 61,
+      "syntax": "OK",
+      "classes": [
+        "TestActualRyuWire"
+      ],
+      "functions": [],
+      "imports": [
+        "dataplane",
+        "importlib.util",
+        "ospfv3",
+        "ryu.lib.packet",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_s01_lsa_equivalence.py",
+      "bytes": 4787,
+      "sha256": "c21e5e0e798713a4a3bce37aa9948db5b7946c44e0a843e2a22544eee67bd0b4",
+      "lines": 124,
+      "syntax": "OK",
+      "classes": [
+        "TestS01Checksum",
+        "TestS01Ordering"
+      ],
+      "functions": [
+        "legacy_checksum",
+        "legacy_comparison"
+      ],
+      "imports": [
+        "ospfv3",
+        "ospfv3.lsa",
+        "random",
+        "scapy",
+        "scapy.utils",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_s02_lsa_parsing_equivalence.py",
+      "bytes": 6962,
+      "sha256": "b4083f416a1857f9dc24cf75be234d2e0eaf252e067ef43f334179806e88aec1",
+      "lines": 147,
+      "syntax": "OK",
+      "classes": [
+        "TestS02ParsingEquivalence"
+      ],
+      "functions": [],
+      "imports": [
+        "ipaddress",
+        "ospfv3",
+        "random",
+        "scapy.contrib.ospf",
+        "test_lsa_scapy",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_s03_native_lsa.py",
+      "bytes": 3201,
+      "sha256": "2084edb3c410402b5e8c0061b0e97716c1d420ae630402166d7ebbf94ceb8869",
+      "lines": 72,
+      "syntax": "OK",
+      "classes": [
+        "TestS03NativeScapySerialization"
+      ],
+      "functions": [],
+      "imports": [
+        "ospfv3",
+        "random",
+        "struct",
+        "test_local_lsa_scapy",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "tests/test_s04_parser_equivalence.py",
+      "bytes": 5315,
+      "sha256": "10d512b79098dd0c0605cb10907da67daf5f03a661d287446d2955eb9f6a3149",
+      "lines": 127,
+      "syntax": "OK",
+      "classes": [
+        "TestS04ParserEquivalence"
+      ],
+      "functions": [],
+      "imports": [
+        "_s04_parser_reference",
+        "logging",
+        "ospfv3",
+        "ospfv3.local_lsa",
+        "ospfv3.lsa",
+        "random",
+        "socket",
+        "struct",
+        "test_parser_scapy",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_w02a_ndp_validation.py",
+      "bytes": 9759,
+      "sha256": "911bc48fe2357b267ce06e06dee786405cf5667eda21fc61e126eed3dc4ea1db",
+      "lines": 202,
+      "syntax": "OK",
+      "classes": [
+        "TestW02ANdp"
+      ],
+      "functions": [
+        "state",
+        "make_raw_ns"
+      ],
+      "imports": [
+        "_w02a_ndp_reference",
+        "ast",
+        "b5_3_harness",
+        "copy",
+        "dataplane",
+        "importlib.util",
+        "ipaddress",
+        "pathlib",
+        "random",
+        "ryu.lib.packet",
+        "test_dataplane_b5_3",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_w02b_lsdb_snapshot.py",
+      "bytes": 11914,
+      "sha256": "a17f0d07d2a49cedff2f6e136b6749cdb6bd38aee27970a004c40c3d8ffe6355",
+      "lines": 261,
+      "syntax": "OK",
+      "classes": [
+        "Clock",
+        "Log",
+        "TestW02bSnapshot"
+      ],
+      "functions": [
+        "class_methods",
+        "cmp_instances",
+        "load_offline",
+        "lsa",
+        "key"
+      ],
+      "imports": [
+        "ast",
+        "copy",
+        "logging",
+        "ospfv3.lsdb",
+        "ospfv3.routing",
+        "pathlib",
+        "random",
+        "sys",
+        "test_lsdb_spf_b5_1",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_w02c_spf_validation.py",
+      "bytes": 13683,
+      "sha256": "bda4ecc5bebf211dd073a4bf3263cb617eeab5f20e2f6567c5e932d09849edca",
+      "lines": 268,
+      "syntax": "OK",
+      "classes": [
+        "TestW02CSPF"
+      ],
+      "functions": [
+        "methods",
+        "load_routing",
+        "link",
+        "router",
+        "prefix",
+        "base"
+      ],
+      "imports": [
+        "ast",
+        "copy",
+        "heapq",
+        "logging",
+        "ospfv3",
+        "ospfv3.lsdb",
+        "ospfv3.routing",
+        "pathlib",
+        "random",
+        "scapy",
+        "test_lsdb_spf_b5_1",
+        "types",
+        "unittest"
+      ]
+    },
+    {
+      "path": "tests/test_w02d_first_packet_forwarding.py",
+      "bytes": 12426,
+      "sha256": "910e2a5c0986e524cfb34a89b5af21006e83e23fec6e69a79fabaf57e3ea84de",
+      "lines": 263,
+      "syntax": "OK",
+      "classes": [
+        "TestW02DFirstPacket"
+      ],
+      "functions": [
+        "production_method",
+        "prepare",
+        "packetouts"
+      ],
+      "imports": [
+        "_w02d_packetin_reference",
+        "ast",
+        "b5_3_harness",
+        "copy",
+        "diagnose_b5_3_known_issues",
+        "importlib.util",
+        "ipaddress",
+        "pathlib",
+        "random",
+        "ryu.lib.packet",
+        "ryu_sdn",
+        "test_w02a_ndp_validation",
+        "types",
+        "unittest",
+        "unittest.mock"
+      ]
+    },
+    {
+      "path": "topology.py",
+      "bytes": 7391,
+      "sha256": "4c8f267484793ecc54d2a15f7d2d142fe1a0ce0d41644a7a231b69763f61beca",
+      "lines": 246,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [
+        "write_file",
+        "make_frr_config",
+        "configure_router",
+        "start_frr",
+        "main"
+      ],
+      "imports": [
+        "mininet.cli",
+        "mininet.log",
+        "mininet.net",
+        "mininet.node",
+        "os",
+        "shlex",
+        "time"
+      ]
+    },
+    {
+      "path": "topology_baseline.py",
+      "bytes": 7487,
+      "sha256": "787951b734b92eef9935e17e28e66d0605fc507189e9c54fd2c182ee7fb3f24a",
+      "lines": 249,
+      "syntax": "OK",
+      "classes": [],
+      "functions": [
+        "write_file",
+        "make_frr_config",
+        "configure_router",
+        "start_frr",
+        "main"
+      ],
+      "imports": [
+        "mininet.cli",
+        "mininet.log",
+        "mininet.net",
+        "mininet.node",
+        "os",
+        "shlex",
+        "time"
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "path": ".git",
+      "reason": "not-source-config"
+    },
+    {
+      "path": ".gitignore",
+      "reason": "not-source-config"
+    }
+  ]
+}

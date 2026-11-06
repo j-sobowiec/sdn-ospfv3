@@ -1,0 +1,42 @@
+{
+  "created_utc": "2026-11-05T01:52:27.155138+00:00",
+  "commit": "e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d",
+  "branch": "uproszczenie-ospfv3",
+  "project": "/home/jan/Inzynierka_uproszczony",
+  "test_scope": "TCP 2 x 128 KiB z SHA256, UDP 2 x 12 datagramow ACK",
+  "results": [
+    {
+      "name": "tcp_h1_to_r3",
+      "pass": true,
+      "client": "PROBE PASS client tcp bytes=131072 sha256=59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850\r\n\r\nPROBE_EXIT:0",
+      "server": "\u001b[?2004l\rPROBE READY\r\nPROBE PASS server tcp bytes=131072 sha256=59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850\r\n\u001b[?2004h",
+      "server_log": "/tmp/ospfv3_transport00_1c98d6e788_tcp_h1_to_r3.log",
+      "port": 58197
+    },
+    {
+      "name": "tcp_r3_to_h1",
+      "pass": true,
+      "client": "\u001b[?2004l\rPROBE PASS client tcp bytes=131072 sha256=59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850\r\n\r\nPROBE_EXIT:0\r\n\u001b[?2004h",
+      "server": "PROBE READY\r\nPROBE PASS server tcp bytes=131072 sha256=59f410ae5e17962412e2aed4f815918f634932f2abf084f00bb638c4db017850",
+      "server_log": "/tmp/ospfv3_transport00_1c98d6e788_tcp_r3_to_h1.log",
+      "port": 41934
+    },
+    {
+      "name": "udp_h1_to_r3",
+      "pass": true,
+      "client": "PROBE PASS client udp packets=12\r\n\r\nPROBE_EXIT:0",
+      "server": "\u001b[?2004l\rPROBE READY\r\nPROBE PASS server udp packets=12\r\n\u001b[?2004h",
+      "server_log": "/tmp/ospfv3_transport00_1c98d6e788_udp_h1_to_r3.log",
+      "port": 40522
+    },
+    {
+      "name": "udp_r3_to_h1",
+      "pass": true,
+      "client": "\u001b[?2004l\rPROBE PASS client udp packets=12\r\n\r\nPROBE_EXIT:0\r\n\u001b[?2004h",
+      "server": "PROBE READY\r\nPROBE PASS server udp packets=12",
+      "server_log": "/tmp/ospfv3_transport00_1c98d6e788_udp_r3_to_h1.log",
+      "port": 44289
+    }
+  ],
+  "pass_count": 4
+}
