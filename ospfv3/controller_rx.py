@@ -13,12 +13,17 @@ from ospfv3.parser import parse_hello, parse_dbd, parse_lsr, parse_lsu, parse_ls
 
 
 class OSPFReceiveMixin:
+    def _parse_or_log(self, parser, data, length, kind):
+        try:
+            return parser(data, length)
+        except ValueError as exc:
+            self.logger.warning(f"[OSPF][{kind}] %s", exc)
+            return None
+
     def handle_ospf_hello(self, in_port, eth_pkt, ipv6_pkt, ospf_data,
                           pkt_len, router_id_text, area_id_text):
-        try:
-            hello = parse_hello(ospf_data, pkt_len)
-        except ValueError as exc:
-            self.logger.warning("[OSPF][HELLO] %s", exc)
+        hello = self._parse_or_log(parse_hello, ospf_data, pkt_len, "HELLO")
+        if hello is None:
             return
 
         if hello["hello_interval"] != cfg.HELLO_INTERVAL:
@@ -90,10 +95,8 @@ class OSPFReceiveMixin:
                         router_id, router_id_text, area_id_text):
         if self._reject_noncurrent_ospf_neighbor(in_port, ipv6_pkt, router_id_text):
             return
-        try:
-            dbd = parse_dbd(ospf_data, pkt_len)
-        except ValueError as exc:
-            self.logger.warning("[OSPF][DBD] %s", exc)
+        dbd = self._parse_or_log(parse_dbd, ospf_data, pkt_len, "DBD")
+        if dbd is None:
             return
 
         mtu = dbd["interface_mtu"]
@@ -146,10 +149,8 @@ class OSPFReceiveMixin:
                         pkt_len, router_id_text, area_id_text):
         if self._reject_noncurrent_ospf_neighbor(in_port, ipv6_pkt, router_id_text):
             return
-        try:
-            requests = parse_lsr(ospf_data, pkt_len)
-        except ValueError as exc:
-            self.logger.warning("[OSPF][LSR RX] %s", exc)
+        requests = self._parse_or_log(parse_lsr, ospf_data, pkt_len, "LSR RX")
+        if requests is None:
             return
 
         self.logger.info("[OSPF][LSR RX] router=%s src=%s count=%d",
@@ -169,10 +170,8 @@ class OSPFReceiveMixin:
                         pkt_len, router_id_text, area_id_text):
         if self._reject_noncurrent_ospf_neighbor(in_port, ipv6_pkt, router_id_text):
             return
-        try:
-            received = parse_lsu(ospf_data, pkt_len)
-        except ValueError as exc:
-            self.logger.warning("[OSPF][LSU] %s", exc)
+        received = self._parse_or_log(parse_lsu, ospf_data, pkt_len, "LSU")
+        if received is None:
             return
         self.log_lsu(in_port, ipv6_pkt, pkt_len, router_id_text,
                      area_id_text, received)
@@ -212,10 +211,8 @@ class OSPFReceiveMixin:
                           pkt_len, router_id_text, area_id_text):
         if self._reject_noncurrent_ospf_neighbor(in_port, ipv6_pkt, router_id_text):
             return
-        try:
-            headers = parse_lsack(ospf_data, pkt_len)
-        except ValueError as exc:
-            self.logger.warning("[OSPF][LSAck RX] %s", exc)
+        headers = self._parse_or_log(parse_lsack, ospf_data, pkt_len, "LSAck RX")
+        if headers is None:
             return
 
         self.logger.info("[OSPF][LSAck RX] router=%s src=%s count=%d",

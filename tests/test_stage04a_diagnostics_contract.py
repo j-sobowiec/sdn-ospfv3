@@ -32,6 +32,9 @@ STAGE08F_RYU_SHA = "c7b7ecb6f9021728190cd59f2e62f5c0006c80d8a29e4bd67608048214a1
 STAGE08F_STAGE07_TEST_SHA = "ca36d0b030d1c0c079823a5e9fb47cb97aebe205d204aaa691ebbe165519e487"
 STAGE08F_CONTRACT_SHA = "4086b5529e8b15dcea7a0547fd48aa353445817c83ef00d02510534eeb6af24b"
 STAGE08F_ORIGINAL_04A_SHA = "a0a19d4673981290643b1b3895911a09a7b779fcce07ba334816af61d4f46966"
+STAGE08G_RX_SHA = "b424cf0a0bf0012f17a3b29a6dc46995f8506130b58db57ae0832f966575d72e"
+STAGE08G_CONTRACT_SHA = "a5d270d8df137be0fc00022407f906c1e2cbe76a121f121a17dfc84bb62928c5"
+STAGE08G_04A_REFERENCE_SHA = "6d5c90ec40edd122f83400d64bae495bca2f9fc56ca868e0dddefba241dcc720"
 
 
 def method_args(tree):
@@ -137,6 +140,17 @@ class Stage04AContract(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(rx_contract.read_bytes()).hexdigest(),
                                  RX_04B_TEST_SHA)
             expected_rx = RX_04B_SHA
+        stage08g_contract = ROOT / "tests/test_stage08g_protocol_dedup.py"
+        if stage08g_contract.is_file():
+            for name, expected in (
+                ("tests/test_stage08g_protocol_dedup.py", STAGE08G_CONTRACT_SHA),
+                ("tests/_stage08g_rx_reference.py", RX_04B_SHA),
+                ("tests/_stage08g_stage04a_reference.py", STAGE08G_04A_REFERENCE_SHA),
+            ):
+                with self.subTest(file=name):
+                    self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(),
+                                     expected)
+            expected_rx = STAGE08G_RX_SHA
         with self.subTest(file="ospfv3/controller_rx.py"):
             self.assertEqual(
                 hashlib.sha256((ROOT / "ospfv3/controller_rx.py").read_bytes()).hexdigest(),

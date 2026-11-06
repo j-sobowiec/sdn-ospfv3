@@ -26,9 +26,6 @@ class OSPFTransmitMixin:
                 and self.neighbor.ipv6 is not None
                 and self.neighbor.mac is not None)
 
-    def _build_ospf_unicast_frame(self, builder, payload):
-        return builder(payload, self.neighbor.ipv6, self.neighbor.mac)
-
     def _send_dbd_frame(self, flags):
         if self.neighbor.port is None:
             return False
@@ -61,8 +58,8 @@ class OSPFTransmitMixin:
         if not self.neighbor.request_list:
             self.logger.info("[OSPF][LSR] no LSAs to request")
             return
-        frame = self._build_ospf_unicast_frame(
-            build_ospfv3_lsr_frame, self.neighbor.request_list)
+        frame = build_ospfv3_lsr_frame(
+            self.neighbor.request_list, self.neighbor.ipv6, self.neighbor.mac)
         if not self.send_frame(frame, self.neighbor.port):
             return
         self.neighbor.lsr_sent = True
@@ -76,8 +73,8 @@ class OSPFTransmitMixin:
     def send_ls_ack(self, lsa_headers):
         if not self._ospf_unicast_ready() or not lsa_headers:
             return
-        frame = self._build_ospf_unicast_frame(
-            build_ospfv3_lsack_frame, lsa_headers)
+        frame = build_ospfv3_lsack_frame(
+            lsa_headers, self.neighbor.ipv6, self.neighbor.mac)
         if not self.send_frame(frame, self.neighbor.port):
             return
         self.logger.info("[OSPF][LSAck TX] to=%s count=%d",
@@ -89,7 +86,7 @@ class OSPFTransmitMixin:
         body = self.local_lsa.build_update_body()
         if body is None:
             return False
-        frame = self._build_ospf_unicast_frame(build_ospfv3_lsu_frame, body)
+        frame = build_ospfv3_lsu_frame(body, self.neighbor.ipv6, self.neighbor.mac)
         self.local_lsa_ack_pending = {
             key: {"ls_sequence": lsa["ls_sequence"],
                   "ls_checksum": lsa["ls_checksum"]}
@@ -111,7 +108,7 @@ class OSPFTransmitMixin:
             return False
         body = struct.pack("!I", len(local_lsas)) + b"".join(
             lsa["raw_lsa"] for lsa in local_lsas)
-        frame = self._build_ospf_unicast_frame(build_ospfv3_lsu_frame, body)
+        frame = build_ospfv3_lsu_frame(body, self.neighbor.ipv6, self.neighbor.mac)
         if not self.send_frame(frame, self.neighbor.port):
             return False
         self.logger.info("[OSPF][LSR RESPONSE TX] to=%s lsas=%d frame-length=%d",
@@ -131,7 +128,7 @@ class OSPFTransmitMixin:
         if result is None:
             return False
         body, count = result
-        frame = self._build_ospf_unicast_frame(build_ospfv3_lsu_frame, body)
+        frame = build_ospfv3_lsu_frame(body, self.neighbor.ipv6, self.neighbor.mac)
         if not self.send_frame(frame, self.neighbor.port):
             return False
         self.local_lsu_last_tx = time.monotonic()
