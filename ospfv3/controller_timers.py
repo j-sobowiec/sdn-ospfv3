@@ -22,45 +22,23 @@ class OSPFTimerMixin:
 
     def neighbor_dead_loop(self):
         while True:
-            if self.neighbor.dead_interval_expired(
-                cfg.DEAD_INTERVAL
-            ):
+            if self.neighbor.dead_interval_expired(cfg.DEAD_INTERVAL):
                 dead_router_id = self.neighbor.router_id
+                self.logger.warning("[OSPF][DEAD] neighbor=%s "
+                                    "no Hello received for %ds",
+                                    dead_router_id, cfg.DEAD_INTERVAL)
 
-                self.logger.warning(
-                    "[OSPF][DEAD] neighbor=%s "
-                    "no Hello received for %ds",
-                    dead_router_id,
-                    cfg.DEAD_INTERVAL
-                )
-
-                # Stop local LSA retransmission state associated
-                # with the lost adjacency.
+                # Stop retransmission and revoke routes learned via R1.
                 self.local_lsa_ack_pending = {}
                 self.local_lsu_last_tx = None
                 self.local_lsu_sent = False
-
-                # Remove topology learned through the lost
-                # OSPF adjacency.
-                self.lsdb.clear_remote(
-                    cfg.ROUTER_ID
-                )
-
-                # R1 itself disappeared: remove both directions, including
-                # global-unicast egress rules, before resetting its MAC/port.
+                self.lsdb.clear_remote(cfg.ROUTER_ID)
                 self.withdraw_all_ipv6_host_flows()
-
-                # The OSPF next-hop is no longer valid.
                 self.data_plane.reset_transit()
-
-                # Clear the neighbor session but preserve the
-                # OpenFlow port so Hello packets can continue.
+                # Preserve the port so Hello can reestablish adjacency.
                 self.neighbor.reset_adjacency()
-
-                self.logger.warning(
-                    "[OSPF][NEIGHBOR] down router=%s",
-                    dead_router_id
-                )
+                self.logger.warning("[OSPF][NEIGHBOR] down router=%s",
+                                    dead_router_id)
 
             hub.sleep(1)
 
@@ -70,9 +48,7 @@ class OSPFTimerMixin:
         while True:
             hub.sleep(5)
             if self.lsdb and self.lsdb.purge_expired():
-                self.logger.info(
-                    "[OSPF][LSDB] expired remote records removed"
-                )
+                self.logger.info("[OSPF][LSDB] expired remote records removed")
 
     def local_lsa_retransmission_loop(self):
         """
@@ -80,9 +56,8 @@ class OSPFTimerMixin:
         """
         while True:
             hub.sleep(1)
-            if not self.local_lsa_ack_pending:
-                continue
-            if self.local_lsu_last_tx is None:
+            if (not self.local_lsa_ack_pending
+                    or self.local_lsu_last_tx is None):
                 continue
             if (time.monotonic() - self.local_lsu_last_tx
                     < cfg.RETRANSMIT_INTERVAL):
@@ -105,22 +80,16 @@ class OSPFTimerMixin:
                     or self.local_lsa_ack_pending):
                 continue
 
-            originated_times = [
-                lsa.get("_originated_at")
-                for lsa in self.local_lsa.values()
-                if lsa.get("_originated_at") is not None
-            ]
-            if not originated_times:
+            # A generator avoids building a temporary list on every tick.
+            oldest_originated_at = min(
+                (lsa["_originated_at"] for lsa in self.local_lsa.values()
+                 if lsa.get("_originated_at") is not None), default=None)
+            if oldest_originated_at is None:
                 continue
-
-            oldest_originated_at = min(originated_times)
             elapsed = time.monotonic() - oldest_originated_at
             if elapsed < cfg.LS_REFRESH_TIME:
                 continue
 
-            self.logger.info(
-                "[OSPF][REFRESH] local LSAs reached "
-                "refresh interval elapsed=%.1fs",
-                elapsed
-            )
+            self.logger.info("[OSPF][REFRESH] local LSAs reached "
+                             "refresh interval elapsed=%.1fs", elapsed)
             self.reoriginate_local_lsas("periodic refresh")

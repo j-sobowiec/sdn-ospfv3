@@ -35,6 +35,9 @@ STAGE08F_ORIGINAL_04A_SHA = "a0a19d4673981290643b1b3895911a09a7b779fcce07ba33481
 STAGE08G_RX_SHA = "b424cf0a0bf0012f17a3b29a6dc46995f8506130b58db57ae0832f966575d72e"
 STAGE08G_CONTRACT_SHA = "a5d270d8df137be0fc00022407f906c1e2cbe76a121f121a17dfc84bb62928c5"
 STAGE08G_04A_REFERENCE_SHA = "6d5c90ec40edd122f83400d64bae495bca2f9fc56ca868e0dddefba241dcc720"
+STAGE08I_TIMERS_SHA = "d56470416af29d3474a06f7b6d74fde7dc5d6c92b0a4ec91ef4c881d52fd3fc4"
+STAGE08I_CONTRACT_SHA = "56d31446c838e579b93156cde3c1430bde4bfae228061f4129cad580f7bbded0"
+STAGE08I_04A_REFERENCE_SHA = "d703f482901b7f0c0cc49db278af8bbf202a90e729ccf24e46d20ebb34c16149"
 
 
 def method_args(tree):
@@ -71,8 +74,20 @@ class Stage04AContract(unittest.TestCase):
         # and the pinned pre-Stage07 reference are both intact.
         stage07_contract = ROOT / "tests/test_stage07_event_contract.py"
         stage08f_contract = ROOT / "tests/test_stage08f_packetout_contract.py"
+        stage08i_contract = ROOT / "tests/test_stage08i_timer_simplification.py"
         expected_ryu_sha = FROZEN_PRODUCTION["ryu_sdn.py"]
         expected_openflow_sha = FROZEN_PRODUCTION["controller_openflow.py"]
+        expected_timer_sha = FROZEN_PRODUCTION["ospfv3/controller_timers.py"]
+        if stage08i_contract.is_file():
+            for name, expected in (
+                ("tests/test_stage08i_timer_simplification.py", STAGE08I_CONTRACT_SHA),
+                ("tests/_stage08i_timers_reference.py", expected_timer_sha),
+                ("tests/_stage08i_stage04a_reference.py", STAGE08I_04A_REFERENCE_SHA),
+            ):
+                with self.subTest(file=name):
+                    self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(),
+                                     expected)
+            expected_timer_sha = STAGE08I_TIMERS_SHA
         if stage07_contract.is_file():
             with self.subTest(file="tests/test_stage07_event_contract.py"):
                 self.assertEqual(hashlib.sha256(stage07_contract.read_bytes()).hexdigest(),
@@ -126,6 +141,8 @@ class Stage04AContract(unittest.TestCase):
                 expected = expected_ryu_sha
             if name == "controller_openflow.py":
                 expected = expected_openflow_sha
+            if name == "ospfv3/controller_timers.py":
+                expected = expected_timer_sha
             with self.subTest(file=name):
                 self.assertEqual(
                     hashlib.sha256((ROOT / name).read_bytes()).hexdigest(),
