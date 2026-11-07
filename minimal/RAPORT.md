@@ -71,20 +71,29 @@ testy wyłączają wyłącznie automatyczne wykrywanie interfejsów Scapy.
 Próba instalacji `ryu==4.34` do lokalnego venv nie powiodła się
 z powodu niekompatybilności skryptu `setup.py` z dostępnym setuptools
 i Pythonem 3.12 (`get_script_args` / `pkgutil.ImpImporter`).
-W środowisku nie ma Dockera, OVS ani Containernet. **Nie wykonano**
-testów integracyjnych z prawdziwym `ospf6d`.
+W lokalnym środowisku roboczym nie ma Dockera, OVS ani Containernet;
+nie można było w nim wykonać testów integracyjnych z `ospf6d`.
+Poniżej zapisano wyniki dostarczone osobno z docelowego stanowiska.
+
+## Testy integracyjne — wyniki dostarczone 7 listopada 2026
+
+Użytkownik wykonał testy w konsoli `containernet>` i przekazał ich
+rzeczywiste wyjście. Nie zostały one uruchomione przez autora refaktoryzacji
+w lokalnym środowisku roboczym.
 
 | Kryterium z zadania | Status weryfikacji |
 | --- | --- |
-| Sąsiad `Full` w `show ipv6 ospf6 neighbor` | NIEWYKONANE |
-| Trasa `2001:db8:1::/64` na `r2` przez OSPF6 | NIEWYKONANE |
-| Ping `h1 -> h2` | NIEWYKONANE |
-| Ping `h2 -> h1` | NIEWYKONANE |
-| Ponowny czysty start bez ręcznych tras | NIEWYKONANE |
+| Sąsiad `Full` w `show ipv6 ospf6 neighbor` | **PASS** — `10.10.10.10 Full/PointToPoint`, interfejs `r1-eth1` (także `2.2.2.2 Full` na `r1-eth0`) |
+| Trasa `2001:db8:1::/64` na `r2` przez OSPF6 | **PASS** — `O>* 2001:db8:1::/64 [110/30]`, next hop `fe80::e084:7bff:fe4c:943a`, `r2-eth0` |
+| Ping `h1 -> h2` | **PASS** — `3/3`, `0%` strat, RTT min/avg/max `0.166/1.987/5.616 ms` |
+| Ping `h2 -> h1` | **PASS** — `3/3`, `0%` strat, RTT min/avg/max `0.171/0.189/0.206 ms` |
+| Ponowny czysty start bez ręcznych tras | **DO SPRAWDZENIA** — brak wyników powtórzonego uruchomienia |
 
-Nie należy traktować przejścia testów Scapy ani lokalnego stanu
-`synchronized` jako potwierdzenia interoperacyjności. Komendy do wykonania
-pięciu testów są w [`README.md`](README.md).
+Przekazane wyniki potwierdzają cztery kryteria, w tym rzeczywistą
+interoperacyjność z `ospf6d`, instalację trasy jako OSPFv3 (kod `O`,
+wybrana trasa `>` i zainstalowana w FIB `*`) oraz ruch IPv6 w obu kierunkach.
+Nie potwierdzają jeszcze powtarzalności po czystym restarcie całej topologii.
+Instrukcja jej sprawdzenia jest w [`README.md`](README.md).
 
 ## Zgodność z pracą i ograniczenia
 
@@ -96,5 +105,5 @@ kierunkach, co pozwala zweryfikować integrację SDN z klasycznym OSPFv3.
 To **prototyp demonstracyjny**, a nie pełny router OSPFv3: bez multi-area,
 multi-neighbor, DR/BDR, pełnego flooding/LSDB, arbitralnej numeracji portów,
 trybu DBD Slave, restart recovery, SPF, ECMP, obsługi wszystkich typów LSA
-i uogólnionej obsługi NDP. Przed uznaniem kryteriów pracy za spełnione
-konieczne jest przejście pięciu testów integracyjnych na docelowym stanowisku.
+i uogólnionej obsługi NDP. Pozostaje zweryfikować piąte kryterium:
+powtarzalność po czystym restarcie całego stanowiska.
