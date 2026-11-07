@@ -23,35 +23,21 @@ class OpenFlowMixin:
     def _send_action_flow(self, datapath, match, priority, actions):
         """Send a FlowMod with the existing APPLY_ACTIONS instruction."""
         parser = datapath.ofproto_parser
-        instructions = [
-            parser.OFPInstructionActions(
-                datapath.ofproto.OFPIT_APPLY_ACTIONS,
-                actions
-            )
-        ]
-        flow_mod = parser.OFPFlowMod(
-            datapath=datapath,
-            priority=priority,
-            match=match,
-            instructions=instructions
-        )
-        datapath.send_msg(flow_mod)
+        instructions = [parser.OFPInstructionActions(
+            datapath.ofproto.OFPIT_APPLY_ACTIONS, actions)]
+        datapath.send_msg(parser.OFPFlowMod(
+            datapath=datapath, priority=priority, match=match,
+            instructions=instructions))
 
 
     def _send_strict_delete(self, datapath, match, priority):
         """Delete the matching priority/table-0 entry, not all routes."""
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
-        flow_mod = parser.OFPFlowMod(
-            datapath=datapath,
-            command=ofproto.OFPFC_DELETE_STRICT,
-            table_id=0,
-            priority=priority,
-            out_port=ofproto.OFPP_ANY,
-            out_group=ofproto.OFPG_ANY,
-            match=match
-        )
-        datapath.send_msg(flow_mod)
+        datapath.send_msg(parser.OFPFlowMod(
+            datapath=datapath, command=ofproto.OFPFC_DELETE_STRICT,
+            table_id=0, priority=priority, out_port=ofproto.OFPP_ANY,
+            out_group=ofproto.OFPG_ANY, match=match))
 
 
     def try_install_ipv6_host_flows(self):
@@ -104,10 +90,7 @@ class OpenFlowMixin:
 
         # Gateway and local LAN must stay on the controller (priorities 200/190).
         match = parser.OFPMatch(
-            in_port=lan_port,
-            eth_type=0x86dd,
-            ipv6_dst=cfg.LAN_GATEWAY
-        )
+            in_port=lan_port, eth_type=0x86dd, ipv6_dst=cfg.LAN_GATEWAY)
 
         actions = [parser.OFPActionOutput(
             ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
@@ -116,17 +99,11 @@ class OpenFlowMixin:
         # 2000::/3 also includes the local LAN! A more-specific punt
         # prevents the generic R1 rule from swallowing LAN-destined IP.
         lan_network = ipaddress.IPv6Network(
-            f"{cfg.LAN_PREFIX}/{cfg.LAN_PREFIX_LEN}", strict=False
-        )
+            f"{cfg.LAN_PREFIX}/{cfg.LAN_PREFIX_LEN}", strict=False)
         lan_match = parser.OFPMatch(
-            in_port=lan_port,
-            eth_type=ether_types.ETH_TYPE_IPV6,
+            in_port=lan_port, eth_type=ether_types.ETH_TYPE_IPV6,
             eth_dst=cfg.ROUTER_MAC,
-            ipv6_dst=(
-                str(lan_network.network_address),
-                str(lan_network.netmask)
-            )
-        )
+            ipv6_dst=(str(lan_network.network_address), str(lan_network.netmask)))
         self._send_action_flow(datapath, lan_match, 190, actions)
 
         # FRRouting, not controller SPF, selects the remote IPv6 route.
@@ -197,27 +174,14 @@ class OpenFlowMixin:
 
 
     def send_frame(self, frame, out_port):
-        """
-        Sends a raw Ethernet frame through the specified OpenFlow port.
-        """
-
+        """Send raw Ethernet through the requested OpenFlow port."""
         if self.datapath is None:
             return False
-
         datapath = self.datapath
-        ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
-
         actions = [parser.OFPActionOutput(out_port)]
-
-        packet_out = parser.OFPPacketOut(
-            datapath=datapath,
-            buffer_id=ofproto.OFP_NO_BUFFER,
-            in_port=ofproto.OFPP_CONTROLLER,
-            actions=actions,
-            data=frame
-        )
-
-        datapath.send_msg(packet_out)
-
+        datapath.send_msg(parser.OFPPacketOut(
+            datapath=datapath, buffer_id=datapath.ofproto.OFP_NO_BUFFER,
+            in_port=datapath.ofproto.OFPP_CONTROLLER,
+            actions=actions, data=frame))
         return True

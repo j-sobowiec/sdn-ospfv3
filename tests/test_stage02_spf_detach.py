@@ -21,6 +21,10 @@ STAGE08B_CONTRACT_SHA = "c4e45dda919ec88b916aa4488b5b7921960e65cbe081dbd1d857a83
 STAGE08C_OPENFLOW_SHA = "5a45925519d6544a2044a8df9f2bb481feeae1f91ce8c5101221dc2955400014"
 STAGE08C_CONTRACT_SHA = "55fc4448e54a881d37b0e681d02f56cb1a6070d02e3fc4e0a4cd43344db135de"
 STAGE08C_UPDATED_08B_SHA = "d80e2ad9a4db77bbbaf5f34f4ac0567f11ca36291b6e24ce81477e39482f3e75"
+STAGE08K_OPENFLOW_SHA = "b790613eb1e395c8fa00de7603e81c6c232dc6ae7a3f32cb09b2f471f9bb2365"
+STAGE08K_CONTRACT_SHA = "98fce6a93079293a370c78bd9425ac531bed3045103aa4aa9385351cbfb2c83c"
+STAGE08K_08C_CONTRACT_SHA = "01c6524525d8b5afdf8e0e656ce7dbdf348830eb6edfdf8dd13e50b1c2c51b74"
+STAGE08K_STAGE02_REFERENCE_SHA = "6fcfe18cf91171e9bedad8d76fdeb132a9e7eac7d057842e202753655221c549"
 
 
 def methods(path, class_name):
@@ -111,6 +115,7 @@ class Stage02SPFContract(unittest.TestCase):
         expected = STAGE01_OPENFLOW_SHA
         contract = ROOT / "tests/test_stage08b_openflow_cleanup.py"
         stage08c_contract = ROOT / "tests/test_stage08c_openflow_refactor.py"
+        stage08k_contract = ROOT / "tests/test_stage08k_openflow_consolidation.py"
         if contract.is_file():
             expected_contract = (STAGE08C_UPDATED_08B_SHA if stage08c_contract.is_file()
                                  else STAGE08B_CONTRACT_SHA)
@@ -122,12 +127,25 @@ class Stage02SPFContract(unittest.TestCase):
             expected = STAGE08B_OPENFLOW_SHA
         if stage08c_contract.is_file():
             self.assertEqual(hashlib.sha256(stage08c_contract.read_bytes()).hexdigest(),
-                             STAGE08C_CONTRACT_SHA)
+                             (STAGE08K_08C_CONTRACT_SHA if stage08k_contract.is_file()
+                              else STAGE08C_CONTRACT_SHA))
             self.assertEqual(hashlib.sha256((ROOT / "tests/_stage08c_openflow_reference.py")
                                              .read_bytes()).hexdigest(), STAGE08B_OPENFLOW_SHA)
             self.assertEqual(hashlib.sha256((ROOT / "tests/_stage08c_stage08b_contract_reference.py")
                                              .read_bytes()).hexdigest(), STAGE08B_CONTRACT_SHA)
             expected = STAGE08C_OPENFLOW_SHA
+        if stage08k_contract.is_file():
+            # Verify the new differential contract AND the unmodified historic
+            # sources, so the earlier Stage02/08C safety checks stay meaningful.
+            for relative, digest in (
+                ("tests/test_stage08k_openflow_consolidation.py", STAGE08K_CONTRACT_SHA),
+                ("tests/_stage08k_openflow_reference.py", STAGE08C_OPENFLOW_SHA),
+                ("tests/_stage08k_stage08c_contract_reference.py", STAGE08C_CONTRACT_SHA),
+                ("tests/_stage08k_stage02_reference.py", STAGE08K_STAGE02_REFERENCE_SHA),
+            ):
+                self.assertEqual(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest(),
+                                 digest)
+            expected = STAGE08K_OPENFLOW_SHA
         self.assertEqual(
             hashlib.sha256((ROOT / "controller_openflow.py").read_bytes()).hexdigest(),
             expected

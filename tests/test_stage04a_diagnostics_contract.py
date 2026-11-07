@@ -38,6 +38,10 @@ STAGE08G_04A_REFERENCE_SHA = "6d5c90ec40edd122f83400d64bae495bca2f9fc56ca868e0dd
 STAGE08I_TIMERS_SHA = "d56470416af29d3474a06f7b6d74fde7dc5d6c92b0a4ec91ef4c881d52fd3fc4"
 STAGE08I_CONTRACT_SHA = "56d31446c838e579b93156cde3c1430bde4bfae228061f4129cad580f7bbded0"
 STAGE08I_04A_REFERENCE_SHA = "d703f482901b7f0c0cc49db278af8bbf202a90e729ccf24e46d20ebb34c16149"
+STAGE08K_OPENFLOW_SHA = "b790613eb1e395c8fa00de7603e81c6c232dc6ae7a3f32cb09b2f471f9bb2365"
+STAGE08K_08C_CONTRACT_SHA = "01c6524525d8b5afdf8e0e656ce7dbdf348830eb6edfdf8dd13e50b1c2c51b74"
+STAGE08K_CONTRACT_SHA = "98fce6a93079293a370c78bd9425ac531bed3045103aa4aa9385351cbfb2c83c"
+STAGE08K_ORIGINAL_04A_SHA = "89453431cd75bf8cc39eaf8e040510f8809ad734d7804474f487d665eb8b16de"
 
 
 def method_args(tree):
@@ -111,6 +115,7 @@ class Stage04AContract(unittest.TestCase):
             expected_ryu_sha = STAGE08F_RYU_SHA
         stage08b_contract = ROOT / "tests/test_stage08b_openflow_cleanup.py"
         stage08c_contract = ROOT / "tests/test_stage08c_openflow_refactor.py"
+        stage08k_contract = ROOT / "tests/test_stage08k_openflow_consolidation.py"
         if stage08b_contract.is_file():
             with self.subTest(file="tests/test_stage08b_openflow_cleanup.py"):
                 expected_08b_contract = (STAGE08C_UPDATED_08B_SHA
@@ -126,7 +131,8 @@ class Stage04AContract(unittest.TestCase):
         if stage08c_contract.is_file():
             with self.subTest(file="tests/test_stage08c_openflow_refactor.py"):
                 self.assertEqual(hashlib.sha256(stage08c_contract.read_bytes()).hexdigest(),
-                                 STAGE08C_CONTRACT_SHA)
+                                 (STAGE08K_08C_CONTRACT_SHA if stage08k_contract.is_file()
+                                  else STAGE08C_CONTRACT_SHA))
             with self.subTest(file="tests/_stage08c_openflow_reference.py"):
                 frozen = ROOT / "tests/_stage08c_openflow_reference.py"
                 self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(),
@@ -136,6 +142,17 @@ class Stage04AContract(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(),
                                  STAGE08B_CONTRACT_SHA)
             expected_openflow_sha = STAGE08C_OPENFLOW_SHA
+        if stage08k_contract.is_file():
+            for name, expected in (
+                ("tests/test_stage08k_openflow_consolidation.py", STAGE08K_CONTRACT_SHA),
+                ("tests/_stage08k_openflow_reference.py", STAGE08C_OPENFLOW_SHA),
+                ("tests/_stage08k_stage08c_contract_reference.py", STAGE08C_CONTRACT_SHA),
+                ("tests/_stage08k_stage04a_reference.py", STAGE08K_ORIGINAL_04A_SHA),
+            ):
+                with self.subTest(file=name):
+                    self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(),
+                                     expected)
+            expected_openflow_sha = STAGE08K_OPENFLOW_SHA
         for name, expected in FROZEN_PRODUCTION.items():
             if name == "ryu_sdn.py":
                 expected = expected_ryu_sha

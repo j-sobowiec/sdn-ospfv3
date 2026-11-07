@@ -15,7 +15,11 @@ from test_stage08b_openflow_cleanup import canonical, controller_class
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CURRENT = ROOT / "controller_openflow.py"
+# Keep the exact 08C contract frozen when a newer, independently tested
+# OpenFlow implementation is installed by Stage 08K.
+CURRENT = (ROOT / "tests/_stage08k_openflow_reference.py"
+           if (ROOT / "tests/test_stage08k_openflow_consolidation.py").is_file()
+           else ROOT / "controller_openflow.py")
 REFERENCE = ROOT / "tests/_stage08c_openflow_reference.py"
 OLD_08B_CONTRACT = ROOT / "tests/_stage08c_stage08b_contract_reference.py"
 BEFORE = "09c2499e6a3edccb017c9c7006afd9cd80bb5a1bf7adc304585a205f43ed0d4c"
