@@ -43,19 +43,15 @@ class Neighbor:
     def update_request_list(self, received_lsas):
         if not self.request_list:
             return
-        remaining = []
-        for request in self.request_list:
-            for received in received_lsas:
-                if (request["ls_type"] == received["ls_type"]
-                        and request["link_state_id"] == received["link_state_id"]
-                        and request["advertising_router"] == received["advertising_router"]
-                        and compare_lsa_instances(received, request) >= 0):
-                    break
-            else:
-                remaining.append(request)
         old_count = len(self.request_list)
-        new_count = len(remaining)
-        self.request_list = remaining
+        self.request_list = [request for request in self.request_list
+                             if not any(
+                                 request["ls_type"] == received["ls_type"]
+                                 and request["link_state_id"] == received["link_state_id"]
+                                 and request["advertising_router"] == received["advertising_router"]
+                                 and compare_lsa_instances(received, request) >= 0
+                                 for received in received_lsas)]
+        new_count = len(self.request_list)
         if new_count != old_count:
             self.logger.info("[OSPF][LSR] received=%d pending=%d",
                              old_count - new_count, new_count)

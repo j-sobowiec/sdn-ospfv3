@@ -53,34 +53,25 @@ def make_frr_config(hostname, router_id, active_interfaces, passive_interfaces=(
 def configure_router(router, addresses, router_id, active_interfaces,
                      passive_interfaces=()):
     """Skonfiguruj IPv6, forwarding i pliki FRR przed startem demonów."""
-    router.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=0 >/dev/null")
-    router.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=0 >/dev/null")
-    router.cmd("sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null")
+    for setting in ("all.disable_ipv6=0", "default.disable_ipv6=0", "all.forwarding=1"):
+        router.cmd(f"sysctl -w net.ipv6.conf.{setting} >/dev/null")
 
     for interface, address in addresses.items():       
         router.cmd(f"ip link set dev {interface} up")
         router.cmd(f"ip -4 addr flush dev {interface}")
         router.cmd(f"ip -6 addr replace {address} dev {interface}")
 
-    config = make_frr_config(
-        router.name,
-        router_id,
-        active_interfaces,
-        passive_interfaces,
-    )
+    config = make_frr_config(router.name, router_id,
+                             active_interfaces, passive_interfaces)
 
     write_file(router, "/etc/frr/daemons", DAEMONS)
     write_file(router, "/etc/frr/frr.conf", config)
     write_file(router, "/etc/frr/vtysh.conf", "service integrated-vtysh-config\n")
     router.cmd("chown -R frr:frr /etc/frr /run/frr")
-    router.cmd(
-        "if getent group frrvty >/dev/null 2>&1; then "
-        "chown frr:frrvty /etc/frr/vtysh.conf; fi"
-    )
-    router.cmd(
-        "chmod 640 /etc/frr/daemons /etc/frr/frr.conf "
-        "/etc/frr/vtysh.conf"
-    )
+    router.cmd("if getent group frrvty >/dev/null 2>&1; then "
+               "chown frr:frrvty /etc/frr/vtysh.conf; fi")
+    router.cmd("chmod 640 /etc/frr/daemons /etc/frr/frr.conf "
+               "/etc/frr/vtysh.conf")
 
 
 def start_frr(router):
@@ -106,24 +97,15 @@ def start_frr(router):
     output = router.cmd("cat /tmp/frr-start.log 2>/dev/null")
 
     if output.strip():
-        info(
-            f"*** {router.name}: "
-            f"{output.strip()}\n"
-        )
+        info(f"*** {router.name}: {output.strip()}\n")
 
     # Give the daemons time to create VTY sockets.
     time.sleep(2)
 
     sockets = router.cmd("ls /run/frr/*.vty 2>/dev/null")
 
-    if (
-        "zebra.vty" not in sockets
-        or "ospf6d.vty" not in sockets
-    ):
-        info(
-            f"WARNING: no VTY sockets on "
-            f"{router.name}:\n{sockets}\n"
-        )
+    if "zebra.vty" not in sockets or "ospf6d.vty" not in sockets:
+        info(f"WARNING: no VTY sockets on {router.name}:\n{sockets}\n")
 
 def main():
     net = Containernet(controller=None, switch=OVSSwitch)

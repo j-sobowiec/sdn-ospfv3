@@ -25,7 +25,7 @@ PINS = {
         "8e13ddfb965653dfd03b855aa875681eef7ba20c3c244c1659d7681c847d591c",
     "dataplane.py":
         "427f13c283d3d68217b51e37430689b8f69e7cb81c44208235264d05e0b36cf6",
-    "ospfv3/local_lsa.py":
+    "tests/_stage08l_local_lsa_reference.py":
         "8def06aee21768857a80daeafb4e0217f987234cf5e3336ba6b921e95c885924",
     "tests/test_stage04c_io_contract.py":
         "1c7f8799f0298e4ac57d9894c80ff22cdfa0e5da8516852ca51355ddf03cbef1",
@@ -54,7 +54,7 @@ class Stage08EStateContract(unittest.TestCase):
             ("DataPlane", "tests/_stage08e_dataplane_reference.py",
              "dataplane.py", {"handle_ndp"}),
             ("LocalLSA", "tests/_stage08e_local_lsa_reference.py",
-             "ospfv3/local_lsa.py", {"recover_sequences", "get_neighbor_interface_id"}),
+             "tests/_stage08l_local_lsa_reference.py", {"recover_sequences", "get_neighbor_interface_id"}),
         ):
             before = class_methods(old_path, name)
             after = class_methods(new_path, name)

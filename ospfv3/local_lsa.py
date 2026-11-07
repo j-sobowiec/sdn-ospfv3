@@ -56,14 +56,12 @@ class LocalLSA:
             if attribute is None:
                 continue
             observed = lsa["ls_sequence"]
-            candidate = observed
-            if prepare_next:
-                try:
-                    candidate = next_ospfv3_lsa_sequence(observed)
-                except ValueError as exc:
-                    self.logger.warning("[OSPF][SELF LSA] cannot recover sequence: %s",
-                                        exc)
-                    continue
+            try:
+                candidate = (next_ospfv3_lsa_sequence(observed)
+                             if prepare_next else observed)
+            except ValueError as exc:
+                self.logger.warning("[OSPF][SELF LSA] cannot recover sequence: %s", exc)
+                continue
             if lsa_sequence_signed(candidate) > lsa_sequence_signed(
                     getattr(self, attribute)):
                 setattr(self, attribute, candidate)
@@ -110,33 +108,30 @@ class LocalLSA:
             self.logger.warning("[OSPF][LOCAL LSA] cannot build Router-LSA: "
                                 "neighbor Interface ID is unknown")
             return None
-        lsa = OSPFv3_Router_LSA(
+        return bytes(OSPFv3_Router_LSA(
             age=0, type=0x2001, id="0.0.0.0", adrouter=cfg.ROUTER_ID,
             seq=self.router_sequence, flags=0, options=cfg.OPTIONS,
             linklist=[OSPFv3_Link(
                 type=1, reserved=0, metric=cfg.INTERFACE_COST,
                 intid=cfg.INTERFACE_ID, neighintid=neighbor_interface_id,
-                neighbor=neighbor_router_id)])
-        return bytes(lsa)
+                neighbor=neighbor_router_id)]))
 
     def build_prefix(self):
-        lsa = OSPFv3_Intra_Area_Prefix_LSA(
+        return bytes(OSPFv3_Intra_Area_Prefix_LSA(
             age=0, type=0x2009, id="0.0.0.0", adrouter=cfg.ROUTER_ID,
             seq=self.prefix_sequence, prefixes=1, reflstype=0x2001,
             reflsid="0.0.0.0", refadrouter=cfg.ROUTER_ID,
             prefixlist=[self._prefix_item(
-                cfg.LAN_PREFIX, cfg.LAN_PREFIX_LEN, cfg.LAN_PREFIX_METRIC)])
-        return bytes(lsa)
+                cfg.LAN_PREFIX, cfg.LAN_PREFIX_LEN, cfg.LAN_PREFIX_METRIC)]))
 
     def build_link(self):
         interface_lsid = str(ipaddress.IPv4Address(cfg.INTERFACE_ID))
-        lsa = OSPFv3_Link_LSA(
+        return bytes(OSPFv3_Link_LSA(
             age=0, type=0x0008, id=interface_lsid, adrouter=cfg.ROUTER_ID,
             seq=self.link_sequence, prio=cfg.ROUTER_PRIORITY,
             options=cfg.OPTIONS, lladdr=cfg.LINK_LOCAL, prefixes=1,
             prefixlist=[self._prefix_item(
-                cfg.TRANSIT_PREFIX, cfg.TRANSIT_PREFIX_LEN, 0)])
-        return bytes(lsa)
+                cfg.TRANSIT_PREFIX, cfg.TRANSIT_PREFIX_LEN, 0)]))
 
     def install(self, raw_lsa):
         if len(raw_lsa) < 20:
@@ -186,11 +181,9 @@ class LocalLSA:
         lsas = []
         for key in sorted(pending):
             local = self.entries.get(key)
-            expected = pending[key]
-            if local is None:
-                continue
-            if (local["ls_sequence"] == expected["ls_sequence"]
-                    and local["ls_checksum"] == expected["ls_checksum"]):
+            if (local is not None
+                    and local["ls_sequence"] == pending[key]["ls_sequence"]
+                    and local["ls_checksum"] == pending[key]["ls_checksum"]):
                 lsas.append(local["raw_lsa"])
         if not lsas:
             return None

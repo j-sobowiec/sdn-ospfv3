@@ -10,7 +10,7 @@ import test_a02_topology_equivalence as a02
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NEW = ROOT / "topology.py"
+NEW = ROOT / "tests/_stage08l_topology_reference.py"
 OLD = ROOT / "tests/_stage08d_topology_reference.py"
 A02 = ROOT / "tests/test_a02_topology_equivalence.py"
 A02_REFERENCE = ROOT / "tests/_a02_topology_reference.py"
