@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def state(dp):
     return (dp.lan_port, dict(dp.lan_hosts), dp.transit_port,
-            dict(dp.transit_neighbors), dp.transit_router_ipv6,
+            dp.transit_router_ipv6,
             dp.transit_router_mac)
 
 
@@ -94,7 +94,7 @@ class TestW02ANdp(unittest.TestCase):
         pkt, eth, ip6, port = make_ndp(target=CFG.LINK_LOCAL,
                                          port=1, src=TRANSIT_IP, mac=TRANSIT_MAC)
         self.assertIsInstance(dp.handle_ndp(pkt, eth, ip6, port), bytes)
-        self.assertEqual(dp.transit_neighbors[TRANSIT_IP], TRANSIT_MAC)
+        self.assertEqual((dp.transit_router_ipv6, dp.transit_router_mac), (TRANSIT_IP, TRANSIT_MAC))
 
     def test_07_bad_transit_ns_does_not_mutate(self):
         dp = DataPlane()

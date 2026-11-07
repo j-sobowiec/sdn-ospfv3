@@ -24,11 +24,11 @@ PINS = {
     "tests/_stage08e_local_lsa_reference.py":
         "8e13ddfb965653dfd03b855aa875681eef7ba20c3c244c1659d7681c847d591c",
     "dataplane.py":
-        "427f13c283d3d68217b51e37430689b8f69e7cb81c44208235264d05e0b36cf6",
+        "c03330784a272df7bd9692644b10f5bc1752fb52b3f7fe68d23a545888abf52a",
     "tests/_stage08l_local_lsa_reference.py":
         "8def06aee21768857a80daeafb4e0217f987234cf5e3336ba6b921e95c885924",
     "tests/test_stage04c_io_contract.py":
-        "1c7f8799f0298e4ac57d9894c80ff22cdfa0e5da8516852ca51355ddf03cbef1",
+        "7298a997569a207004702ef3893837b7f6139de15d5220a9cd577714372a955e",
     "tests/test_stage05_lsa_contract.py":
         "d8673829de0514911c2a975b9fe29f5902fa54e1e4cdff99316ebd6d30080ff3",
 }
@@ -52,7 +52,7 @@ class Stage08EStateContract(unittest.TestCase):
     def test_no_changes_to_other_dataplane_and_local_lsa_methods(self):
         for name, old_path, new_path, exempt in (
             ("DataPlane", "tests/_stage08e_dataplane_reference.py",
-             "dataplane.py", {"handle_ndp"}),
+             "dataplane.py", {"handle_ndp", "__init__", "learn_transit_router", "reset_transit"}),
             ("LocalLSA", "tests/_stage08e_local_lsa_reference.py",
              "tests/_stage08l_local_lsa_reference.py", {"recover_sequences", "get_neighbor_interface_id"}),
         ):

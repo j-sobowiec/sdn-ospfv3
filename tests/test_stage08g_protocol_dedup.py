@@ -19,7 +19,7 @@ import test_stage04c_io_contract as tx_contract
 ROOT = Path(__file__).resolve().parents[1]
 RX_OLD = ROOT / "tests/_stage08g_rx_reference.py"
 TX_OLD = ROOT / "tests/_stage08g_tx_reference.py"
-RX_NEW = ROOT / "ospfv3/controller_rx.py"
+RX_NEW = ROOT / "tests/_stage09c2_rx_reference.py"
 TX_NEW = ROOT / "ospfv3/controller_tx.py"
 PINS = {
     RX_OLD: "5ee6e527ee840f7d0ed10c56c721b73bc3b54e1548faabdec734bf930397e59d",

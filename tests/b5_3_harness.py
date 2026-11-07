@@ -155,7 +155,27 @@ OpenFlowMixin = load_class(ROOT / 'controller_openflow.py', 'OpenFlowMixin', BAS
 # M05: load real TX and timer method ASTs; preserve lifecycle tests without Ryu.
 OSPFTransmitMixin = load_class(ROOT / 'ospfv3/controller_tx.py', 'OSPFTransmitMixin', BASE)
 OSPFTimerMixin = load_class(ROOT / 'ospfv3/controller_timers.py', 'OSPFTimerMixin', BASE)
-ControllerAST = load_class(CTRL_PATH, 'OSPFv3Controller', {**BASE, 'DataPlane':DataPlane})
+def _load_ospf_validator_for_ast_tests():
+    """Execute the actual parser validator without requiring Ryu or Scapy imports.
+
+    B5.3 loads the controller class AST but omits module-level imports. Since
+    09C-1 moves packet validation into the parser, inject its real method AST.
+    No synthetic validator or special-case PacketIn behaviour is used.
+    """
+    source = ROOT / 'ospfv3/parser.py'
+    tree = ast.parse(source.read_text(encoding='utf8'), filename=str(source))
+    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                 and node.name == 'validate_ospfv3_transport']
+    if len(functions) != 1:
+        raise AssertionError('Brak jednoznacznego walidatora OSPFv3 w parser.py')
+    namespace = dict(BASE)
+    module = ast.fix_missing_locations(ast.Module(body=functions, type_ignores=[]))
+    exec(compile(module, str(source), 'exec'), namespace)
+    return namespace['validate_ospfv3_transport']
+
+ControllerAST = load_class(CTRL_PATH, 'OSPFv3Controller',
+                           {**BASE, 'DataPlane': DataPlane,
+                            'validate_ospfv3_transport': _load_ospf_validator_for_ast_tests()})
 Controller = type('Controller', (ControllerAST, OSPFTransmitMixin, OSPFTimerMixin, OpenFlowMixin), {})
 
 def make_controller(route=True, ready=True):

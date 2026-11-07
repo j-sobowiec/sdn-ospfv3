@@ -94,7 +94,7 @@ def inbound(icmp_type=135, code=0, target=CFG.LAN_GATEWAY,
 
 def dp_snapshot(dp):
     return (dp.lan_port, dict(dp.lan_hosts), dp.transit_port,
-            dict(dp.transit_neighbors), dp.transit_router_mac,
+            dp.transit_router_mac,
             dp.transit_router_ipv6, dp.lan_network)
 
 
@@ -127,7 +127,7 @@ class DataplaneContract(unittest.TestCase):
             ("learn_lan_host", (1, "2001:db8:1::100", "z"), {}),
             ("reset_transit", (), {})])
         self.assertIsNone(dp.transit_router_mac)
-        self.assertEqual(dp.transit_neighbors, {})
+        self.assertIsNone(dp.transit_router_ipv6)
 
     def test_gateway_ndp_rejects_untrusted_packets(self):
         actions = []

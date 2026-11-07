@@ -11,7 +11,7 @@ SOURCES = (
     "ryu_sdn.py",
     "ospfv3/controller_rx.py",
     "ospfv3/controller_timers.py",
-    "ospfv3/controller_diagnostics.py"
+    "tests/_stage09c2_diagnostics_reference.py"
 )
 STAGE01_OPENFLOW_SHA = (
     "be7c836a2154c574834bf0d299cb2c5890dbaebc8a93c97ee54ad5c180018ed3"

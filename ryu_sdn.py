@@ -12,8 +12,6 @@ from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, set_ev_cl
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet, ipv6, ethernet, icmpv6
 from ryu.lib import hub
-from scapy.contrib.ospf import OSPFv3_Hdr
-from scapy.error import Scapy_Exception
 
 from dataplane import DataPlane
 from controller_openflow import OpenFlowMixin
@@ -21,16 +19,14 @@ from ospfv3 import config as cfg
 from ospfv3.lsdb import LSDB
 from ospfv3.local_lsa import LocalLSA
 from ospfv3.neighbor import Neighbor
-from ospfv3.controller_diagnostics import OSPFDiagnosticsMixin
 from ospfv3.controller_rx import OSPFReceiveMixin
 from ospfv3.controller_tx import OSPFTransmitMixin
 from ospfv3.controller_timers import OSPFTimerMixin
-from ospfv3.packet import calculate_ospfv3_checksum
+from ospfv3.parser import validate_ospfv3_transport
 
 
-class OSPFv3Controller(OSPFDiagnosticsMixin, OSPFReceiveMixin,
-                       OSPFTransmitMixin, OSPFTimerMixin, OpenFlowMixin,
-                       app_manager.RyuApp):
+class OSPFv3Controller(OSPFReceiveMixin, OSPFTransmitMixin,
+                       OSPFTimerMixin, OpenFlowMixin, app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
@@ -176,84 +172,22 @@ class OSPFv3Controller(OSPFDiagnosticsMixin, OSPFReceiveMixin,
                     return
 
         if ipv6_pkt and ipv6_pkt.nxt == 89:
-            try:
-                ipv6_index = pkt.protocols.index(ipv6_pkt)
-                ospf_payload = pkt.protocols[ipv6_index + 1]
-            except (ValueError, IndexError):
+            validated = validate_ospfv3_transport(pkt, ipv6_pkt, self.logger)
+            if validated is None:
                 return
-            if not isinstance(ospf_payload, (bytes, bytearray)):
-                return
-            ospf_data = bytes(ospf_payload)
-            if len(ospf_data) >= 16:
-                try:
-                    ospf_header = OSPFv3_Hdr(ospf_data[:16])
-                    version = int(ospf_header.version)
-                    pkt_type = int(ospf_header.type)
-                    pkt_len = int(ospf_header.len)
-                    router_id_text = ospf_header.src
-                    area_id_text = ospf_header.area
-                    router_id = int(ipaddress.IPv4Address(router_id_text))
-                    checksum = int(ospf_header.chksum)
-                    instance_id = int(ospf_header.instance)
-                except (Scapy_Exception, ValueError, TypeError, IndexError) as exc:
-                    self.logger.warning("[OSPF][DROP] invalid OSPFv3 header: %s", exc)
-                    return
-                if pkt_len < 16 or pkt_len > len(ospf_data):
-                    return
-                ospf_for_checksum = bytearray(ospf_data[:pkt_len])
-                ospf_for_checksum[12:14] = b"\x00\x00"
-                calculated_checksum = calculate_ospfv3_checksum(
-                    ipv6_pkt.src, ipv6_pkt.dst, bytes(ospf_for_checksum))
-                if checksum != calculated_checksum:
-                    self.logger.warning(
-                        "[OSPF][WARN] invalid checksum "
-                        "received=0x%04x calculated=0x%04x",
-                        checksum, calculated_checksum)
-                    return
-                if area_id_text != cfg.AREA_ID:
-                    self.logger.warning("[OSPF][DROP] area mismatch "
-                                        "received=%s expected=%s",
-                                        area_id_text, cfg.AREA_ID)
-                    return
-                if instance_id != cfg.INSTANCE_ID:
-                    self.logger.warning("[OSPF][DROP] instance mismatch "
-                                        "received=%d expected=%d",
-                                        instance_id, cfg.INSTANCE_ID)
-                    return
-                try:
-                    ospf_source = ipaddress.IPv6Address(ipv6_pkt.src)
-                except ValueError:
-                    return
-                if not ospf_source.is_link_local:
-                    self.logger.warning("[OSPF][DROP] non-link-local source=%s",
-                                        ipv6_pkt.src)
-                    return
-                try:
-                    ospf_destination = ipaddress.IPv6Address(ipv6_pkt.dst)
-                except ValueError:
-                    return
-                ospf_multicast = (ipaddress.IPv6Address("ff02::5"),
-                                  ipaddress.IPv6Address("ff02::6"))
-                if (ospf_destination in ospf_multicast
-                        and ipv6_pkt.hop_limit != 1):
-                    self.logger.warning(
-                        "[OSPF][DROP] invalid multicast hop-limit "
-                        "dst=%s received=%d expected=1",
-                        ipv6_pkt.dst, ipv6_pkt.hop_limit)
-                    return
-                if version == 3:
-                    target = {
-                        1: (36, "handle_ospf_hello"),
-                        2: (28, "handle_ospf_dbd"),
-                        3: (28, "handle_ospf_lsr"),
-                        4: (20, "handle_ospf_lsu"),
-                        5: (36, "handle_ospf_lsack"),
-                    }.get(pkt_type)
-                    if target is not None and pkt_len >= target[0]:
-                        args = [in_port, ipv6_pkt, ospf_data, pkt_len,
-                                router_id_text, area_id_text]
-                        if pkt_type == 1:
-                            args.insert(1, eth_pkt)
-                        elif pkt_type == 2:
-                            args.insert(4, router_id)
-                        getattr(self, target[1])(*args)
+            ospf_data, pkt_type, pkt_len, router_id_text, area_id_text, router_id = validated
+            target = {
+                1: (36, "handle_ospf_hello"),
+                2: (28, "handle_ospf_dbd"),
+                3: (28, "handle_ospf_lsr"),
+                4: (20, "handle_ospf_lsu"),
+                5: (36, "handle_ospf_lsack"),
+            }.get(pkt_type)
+            if target is not None and pkt_len >= target[0]:
+                args = [in_port, ipv6_pkt, ospf_data, pkt_len,
+                        router_id_text, area_id_text]
+                if pkt_type == 1:
+                    args.insert(1, eth_pkt)
+                elif pkt_type == 2:
+                    args.insert(4, router_id)
+                getattr(self, target[1])(*args)

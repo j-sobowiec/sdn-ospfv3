@@ -15,7 +15,6 @@ class DataPlane:
         self.lan_port = None
         self.lan_hosts = {}
         self.transit_port = None
-        self.transit_neighbors = {}
         self.transit_router_mac = None
         self.transit_router_ipv6 = None
         self.lan_network = ipaddress.IPv6Network(
@@ -28,7 +27,6 @@ class DataPlane:
         self.transit_port = in_port
         self.transit_router_mac = mac_address
         self.transit_router_ipv6 = ipv6_address
-        self.transit_neighbors[ipv6_address] = mac_address
         return changed
 
     def reset(self):
@@ -38,7 +36,6 @@ class DataPlane:
 
     def reset_transit(self):
         self.transit_port = None
-        self.transit_neighbors.clear()
         self.transit_router_mac = None
         self.transit_router_ipv6 = None
 
@@ -87,7 +84,6 @@ class DataPlane:
                 return None
             if eth_pkt.src != self.transit_router_mac:
                 return None
-            self.transit_neighbors[ipv6_pkt.src] = eth_pkt.src
 
         return self.build_neighbor_advertisement(
             destination_mac=eth_pkt.src, destination_ipv6=ipv6_pkt.src,

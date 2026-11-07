@@ -1,5 +1,6 @@
 """Strict OSPFv3 packet parsers; Scapy handles the protocol fields."""
 
+import ipaddress
 from ipaddress import IPv4Address
 import struct
 
@@ -8,6 +9,8 @@ from scapy.contrib.ospf import (
     OSPFv3_LSAck, OSPFv3_LSReq, OSPFv3_LSUpd,
 )
 from scapy.error import Scapy_Exception
+from ospfv3 import config as cfg
+from ospfv3.packet import calculate_ospfv3_checksum
 from ospfv3.lsa import (
     parse_ospfv3_router_lsa, parse_ospfv3_link_lsa,
     parse_ospfv3_intra_area_prefix_lsa, ospfv3_lsa_checksum,
@@ -154,3 +157,76 @@ def parse_lsack(ospf_data, pkt_len):
         ospf_data, pkt_len, 16, 20, OSPFv3_LSAck, "lsaheaders",
         "invalid payload length", "LSAck header count does not match payload length", True)
     return [_lsa_header_fields(header) for header in headers]
+
+
+def validate_ospfv3_transport(pkt, ipv6_pkt, logger):
+    """Validate the IPv6/OSPFv3 envelope before RX handles a message.
+
+    Return the unchanged OSPF bytes and dispatch metadata, or None on drop.
+    All wire checks and warning messages match the former Ryu PacketIn path.
+    """
+    try:
+        ipv6_index = pkt.protocols.index(ipv6_pkt)
+        ospf_payload = pkt.protocols[ipv6_index + 1]
+    except (ValueError, IndexError):
+        return None
+    if not isinstance(ospf_payload, (bytes, bytearray)):
+        return None
+    ospf_data = bytes(ospf_payload)
+    if len(ospf_data) < 16:
+        return None
+    try:
+        ospf_header = OSPFv3_Hdr(ospf_data[:16])
+        version = int(ospf_header.version)
+        pkt_type = int(ospf_header.type)
+        pkt_len = int(ospf_header.len)
+        router_id_text = ospf_header.src
+        area_id_text = ospf_header.area
+        router_id = int(ipaddress.IPv4Address(router_id_text))
+        checksum = int(ospf_header.chksum)
+        instance_id = int(ospf_header.instance)
+    except (Scapy_Exception, ValueError, TypeError, IndexError) as exc:
+        logger.warning("[OSPF][DROP] invalid OSPFv3 header: %s", exc)
+        return None
+    if pkt_len < 16 or pkt_len > len(ospf_data):
+        return None
+    ospf_for_checksum = bytearray(ospf_data[:pkt_len])
+    ospf_for_checksum[12:14] = b"\x00\x00"
+    calculated_checksum = calculate_ospfv3_checksum(
+        ipv6_pkt.src, ipv6_pkt.dst, bytes(ospf_for_checksum))
+    if checksum != calculated_checksum:
+        logger.warning(
+            "[OSPF][WARN] invalid checksum "
+            "received=0x%04x calculated=0x%04x",
+            checksum, calculated_checksum)
+        return None
+    if area_id_text != cfg.AREA_ID:
+        logger.warning("[OSPF][DROP] area mismatch "
+                       "received=%s expected=%s", area_id_text, cfg.AREA_ID)
+        return None
+    if instance_id != cfg.INSTANCE_ID:
+        logger.warning("[OSPF][DROP] instance mismatch "
+                       "received=%d expected=%d", instance_id, cfg.INSTANCE_ID)
+        return None
+    try:
+        ospf_source = ipaddress.IPv6Address(ipv6_pkt.src)
+    except ValueError:
+        return None
+    if not ospf_source.is_link_local:
+        logger.warning("[OSPF][DROP] non-link-local source=%s", ipv6_pkt.src)
+        return None
+    try:
+        ospf_destination = ipaddress.IPv6Address(ipv6_pkt.dst)
+    except ValueError:
+        return None
+    ospf_multicast = (ipaddress.IPv6Address("ff02::5"),
+                      ipaddress.IPv6Address("ff02::6"))
+    if ospf_destination in ospf_multicast and ipv6_pkt.hop_limit != 1:
+        logger.warning(
+            "[OSPF][DROP] invalid multicast hop-limit "
+            "dst=%s received=%d expected=1",
+            ipv6_pkt.dst, ipv6_pkt.hop_limit)
+        return None
+    if version != 3:
+        return None
+    return ospf_data, pkt_type, pkt_len, router_id_text, area_id_text, router_id

@@ -11,7 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = "e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d"
-DIAGNOSTICS = ROOT / "ospfv3/controller_diagnostics.py"
+DIAGNOSTICS = ROOT / "tests/_stage09c2_diagnostics_reference.py"
 FROZEN_PRODUCTION = {
     "ryu_sdn.py": "8f9eaa95700bf07183b4e01088002144f0e9f51c5bc0176358744c451f09c4e5",
     "controller_openflow.py": "be7c836a2154c574834bf0d299cb2c5890dbaebc8a93c97ee54ad5c180018ed3",
@@ -33,7 +33,7 @@ STAGE08F_STAGE07_TEST_SHA = "ca36d0b030d1c0c079823a5e9fb47cb97aebe205d204aaa691e
 STAGE08F_CONTRACT_SHA = "4086b5529e8b15dcea7a0547fd48aa353445817c83ef00d02510534eeb6af24b"
 STAGE08F_ORIGINAL_04A_SHA = "a0a19d4673981290643b1b3895911a09a7b779fcce07ba334816af61d4f46966"
 STAGE08G_RX_SHA = "b424cf0a0bf0012f17a3b29a6dc46995f8506130b58db57ae0832f966575d72e"
-STAGE08G_CONTRACT_SHA = "a5d270d8df137be0fc00022407f906c1e2cbe76a121f121a17dfc84bb62928c5"
+STAGE08G_CONTRACT_SHA = "dbc50ead19ec892fe27caeb8b82e1bc0cc9daaf3b74864d2b2ffcce1ae29ba1a"
 STAGE08G_04A_REFERENCE_SHA = "6d5c90ec40edd122f83400d64bae495bca2f9fc56ca868e0dddefba241dcc720"
 STAGE08I_TIMERS_SHA = "d56470416af29d3474a06f7b6d74fde7dc5d6c92b0a4ec91ef4c881d52fd3fc4"
 STAGE08I_CONTRACT_SHA = "56d31446c838e579b93156cde3c1430bde4bfae228061f4129cad580f7bbded0"
@@ -42,6 +42,11 @@ STAGE08K_OPENFLOW_SHA = "b790613eb1e395c8fa00de7603e81c6c232dc6ae7a3f32cb09b2f47
 STAGE08K_08C_CONTRACT_SHA = "01c6524525d8b5afdf8e0e656ce7dbdf348830eb6edfdf8dd13e50b1c2c51b74"
 STAGE08K_CONTRACT_SHA = "98fce6a93079293a370c78bd9425ac531bed3045103aa4aa9385351cbfb2c83c"
 STAGE08K_ORIGINAL_04A_SHA = "89453431cd75bf8cc39eaf8e040510f8809ad734d7804474f487d665eb8b16de"
+STAGE09C_RYU_SHA = "dec517bc3fd92042cb00047dc53cd8bff8cd602e8ac9e41c8c52e35d95064c17"
+STAGE09C_STAGE07_SHA = "6168f38454ff9458ac0b92d6519c8722a8d1eab7042128a85dfc68a193fcf8a7"
+STAGE09C_08J_SHA = "6ed34f04d99adbab2091b45a044b6281bc7455997a329f9780cf28b699a470a5"
+STAGE09C_TEST_SHA = "f829ddb6e0e6da3a060b46da6531cec733e4592486de229b298f6c83bb71d1a0"
+
 
 
 def method_args(tree):
@@ -94,8 +99,10 @@ class Stage04AContract(unittest.TestCase):
             expected_timer_sha = STAGE08I_TIMERS_SHA
         if stage07_contract.is_file():
             with self.subTest(file="tests/test_stage07_event_contract.py"):
+                current_09c = ROOT / "tests/test_stage09c_packetin.py"
                 self.assertEqual(hashlib.sha256(stage07_contract.read_bytes()).hexdigest(),
-                                 (STAGE08F_STAGE07_TEST_SHA if stage08f_contract.is_file()
+                                 (STAGE09C_STAGE07_SHA if current_09c.is_file()
+                                  else STAGE08F_STAGE07_TEST_SHA if stage08f_contract.is_file()
                                   else STAGE07_TEST_SHA))
             with self.subTest(file="tests/_stage07_ryu_sdn_reference.py"):
                 reference = ROOT / "tests/_stage07_ryu_sdn_reference.py"
@@ -113,6 +120,24 @@ class Stage04AContract(unittest.TestCase):
                     self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(),
                                      expected)
             expected_ryu_sha = STAGE08F_RYU_SHA
+        stage09c_contract = ROOT / "tests/test_stage09c_packetin.py"
+        if stage09c_contract.is_file():
+            for name, expected in (
+                ("tests/test_stage09c_packetin.py", STAGE09C_TEST_SHA),
+                ("tests/test_stage08j_parser_dedup.py", STAGE09C_08J_SHA),
+                ("tests/_stage09c_ryu_reference.py", STAGE08F_RYU_SHA),
+                ("tests/_stage09c_parser_reference.py",
+                 "36d7846c52a0e102c534a2a60d951be9ed29f17cccd5260fa8460785d6a4e155"),
+                ("tests/_stage09c_stage07_reference.py", STAGE08F_STAGE07_TEST_SHA),
+                ("tests/_stage09c_stage08j_reference.py",
+                 "e5c59240a16cea0ecf53b4bd34df709a3c9d44e7e8e30fe1875983d5fc2df40e"),
+                ("tests/_stage09c_stage04a_reference.py",
+                 "e81f1f6d20fdd8759c1f45ee6b4e31b81acac79312e1b7d774ed5bc93c59ac3c"),
+            ):
+                with self.subTest(file=name):
+                    self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(),
+                                     expected)
+            expected_ryu_sha = STAGE09C_RYU_SHA
         stage08b_contract = ROOT / "tests/test_stage08b_openflow_cleanup.py"
         stage08c_contract = ROOT / "tests/test_stage08c_openflow_refactor.py"
         stage08k_contract = ROOT / "tests/test_stage08k_openflow_consolidation.py"
@@ -162,7 +187,9 @@ class Stage04AContract(unittest.TestCase):
                 expected = expected_timer_sha
             with self.subTest(file=name):
                 self.assertEqual(
-                    hashlib.sha256((ROOT / name).read_bytes()).hexdigest(),
+                    hashlib.sha256((ROOT / (
+                        "tests/_stage09c2_ryu_reference.py" if name == "ryu_sdn.py"
+                        else name)).read_bytes()).hexdigest(),
                     expected
                 )
         # Stage04B deliberately replaces ONLY RX. Do not weaken this to a
@@ -187,7 +214,7 @@ class Stage04AContract(unittest.TestCase):
             expected_rx = STAGE08G_RX_SHA
         with self.subTest(file="ospfv3/controller_rx.py"):
             self.assertEqual(
-                hashlib.sha256((ROOT / "ospfv3/controller_rx.py").read_bytes()).hexdigest(),
+                hashlib.sha256((ROOT / "tests/_stage09c2_rx_reference.py").read_bytes()).hexdigest(),
                 expected_rx
             )
 

@@ -260,6 +260,24 @@ ENV = {
 }
 
 
+def load_transport_validator():
+    """Execute the actual 09C parser validator under the Stage07 fake wires."""
+    path = ROOT / "ospfv3/parser.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    func = next(node for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name == "validate_ospfv3_transport")
+    scope = dict(ipaddress=ipaddress, OSPFv3_Hdr=OspfHeader,
+                 Scapy_Exception=ScapyError, cfg=CFG,
+                 calculate_ospfv3_checksum=lambda *args: 0x1234)
+    exec(compile(ast.fix_missing_locations(ast.Module(
+        body=[func], type_ignores=[])), str(path), "exec"), scope)
+    return scope["validate_ospfv3_transport"]
+
+
+ENV["validate_ospfv3_transport"] = load_transport_validator()
+
+
 def load_class(path):
     tree = ast.parse(path.read_text(encoding="utf8"))
     node = next(node for node in tree.body

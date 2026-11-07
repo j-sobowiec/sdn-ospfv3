@@ -24,11 +24,11 @@ class TestLearning(unittest.TestCase):
         self.assertIsNone(self.dp.lan_port)
         self.assertEqual(self.dp.lan_hosts, {})
         self.assertIsNone(self.dp.transit_port)
-        self.assertEqual(self.dp.transit_neighbors, {})
+        self.assertIsNone(self.dp.transit_router_ipv6)
 
     def test_learn_transit_first_change(self):
         self.assertTrue(self.dp.learn_transit_router(1, TRANSIT_IP, TRANSIT_MAC))
-        self.assertEqual(self.dp.transit_neighbors[TRANSIT_IP], TRANSIT_MAC)
+        self.assertEqual((self.dp.transit_router_ipv6, self.dp.transit_router_mac), (TRANSIT_IP, TRANSIT_MAC))
 
     def test_learn_transit_same_identity_no_change(self):
         self.dp.learn_transit_router(1, TRANSIT_IP, TRANSIT_MAC)
@@ -84,7 +84,7 @@ class TestLearning(unittest.TestCase):
         self.dp.learn_transit_router(1, TRANSIT_IP, TRANSIT_MAC)
         self.dp.reset_transit()
         self.assertIsNone(self.dp.transit_port)
-        self.assertEqual(self.dp.transit_neighbors, {})
+        self.assertIsNone(self.dp.transit_router_ipv6)
         self.assertEqual(self.dp.lan_hosts[LAN_IP], LAN_MAC)
 
     def test_full_reset(self):
@@ -92,7 +92,7 @@ class TestLearning(unittest.TestCase):
         self.dp.learn_transit_router(1, TRANSIT_IP, TRANSIT_MAC)
         self.dp.reset()
         self.assertEqual(self.dp.lan_hosts, {})
-        self.assertEqual(self.dp.transit_neighbors, {})
+        self.assertIsNone(self.dp.transit_router_ipv6)
         self.assertIsNone(self.dp.lan_port)
 
 

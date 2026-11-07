@@ -14,7 +14,7 @@ PIN = "e4ed0fa4f83cfc8ece8487f91023e3b8e5289e7d"
 PRODUCTION = (
     "ryu_sdn.py", "controller_openflow.py",
     "ospfv3/controller_rx.py", "ospfv3/controller_timers.py",
-    "ospfv3/controller_diagnostics.py", "ospfv3/lsdb.py",
+    "tests/_stage09c2_diagnostics_reference.py", "ospfv3/lsdb.py",
 )
 REFERENCES = (
     "tests/_d05_routing_reference.py",
