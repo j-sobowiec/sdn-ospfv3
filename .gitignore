@@ -3,7 +3,13 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
 .coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
 # Python environments and generated artifacts
 .venv/
@@ -16,6 +22,8 @@ dist/
 
 # Local logs and historical copies
 *.log
+*.pid
+*.swp
 *.bak
 *.bak_*
 /validation.backup-*/
@@ -25,6 +33,7 @@ dist/
 
 # IDE / OS
 .vscode/
+.idea/
 .DS_Store
 
 /_migracja/
