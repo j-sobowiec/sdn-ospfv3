@@ -101,6 +101,10 @@ class Peer:
                 or hello.deadinterval != cfg.DEAD_INTERVAL
                 or int(hello.intid) == 0):
             raise ValueError("incompatible Hello timers or interface ID")
+        # Both ends of this fixed backbone-area link must agree on the
+        # external-routing (E) bit. Other capabilities need not match.
+        if (int(hello.options) ^ cfg.OPTIONS) & 0x02:
+            raise ValueError("OSPFv3 Hello E-bit does not match area type")
         if self.router_id and (hdr.src != self.router_id or ip.src != self.address
                                or eth.src != self.mac):
             raise ValueError("only one OSPFv3 neighbor is supported")
@@ -193,12 +197,32 @@ class Peer:
             self.log.info("[OSPF] requesting %d remote LSAs", len(self.requests))
 
     def on_lsr(self, body):
+        if self.stage not in ("exchange", "loading", "synchronized"):
+            return
         keys = [packets.lsa_key(OSPFv3_LSReq_Item(body[i:i + 12]))
                 for i in range(0, len(body), 12)]
         self.log.info("[OSPF][LSR RX] requests=%d", len(keys))
-        requested = [self.local[key] for key in keys if key in self.local]
+        if any(key not in self.local for key in keys):
+            # RFC 2328 section 10.7: BadLSReq invalidates the current
+            # exchange, even if some other requested LSAs are available.
+            self.restart_exchange("BadLSReq: requested LSA is absent")
+            return
+        requested = [self.local[key] for key in keys]
         if requested:
             self.transmit(packets.lsu(requested, self.address, self.mac), "LSU reply")
+
+    def restart_exchange(self, reason):
+        """Re-negotiate a broken adjacency without forgetting the neighbor."""
+        self.log.warning("[OSPF] %s; restarting database exchange", reason)
+        self.stage = "exstart"
+        self.sequence = (self.sequence + 1) & 0xffffffff
+        self.last_dbd = None
+        self.dbd_sent_at = 0
+        self.requests.clear()
+        self.lsr_sent_at = 0
+        self.pending_acks.clear()
+        self.local_sent_at = 0
+        self.send_dbd(7)
 
     def on_lsu(self, body):
         received = packets.lsa_headers(body)
