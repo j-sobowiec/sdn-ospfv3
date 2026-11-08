@@ -425,14 +425,19 @@ class Harness:
         # the OSPF adjacency. This intentionally interrupts only our Ryu process.
         self.stop_controller()
         lost, nlast, nl = self.wait_for(
-            r1, "withdraw-neighbor", neigh_cmd, lambda text: not is_full(text), 85)
+            r1, "withdraw-neighbor", neigh_cmd,
+            lambda text: "Neighbor ID" in text and not is_full(text), 85)
         withdrawn, last, klog = self.wait_for(
             r2, "withdraw-r2-kernel", kernel_cmd,
             kernel_route_missing, 85)
         frr_after, flog = self.query(r2, "withdraw-r2-frr", frr_cmd)
         # Some FRR versions retain old LSA text briefly, so the protocol RIB
         # and kernel FIB must both no longer offer the SDN prefix.
-        frr_withdrawn = PREFIX not in frr_after
+        frr_withdrawn = (
+            PREFIX not in frr_after
+            and re.search(r"(?m)^\s*\*?N\s+IA\s+2001:db8:2::/64(?=\s|$)",
+                          strip_terminal_artifacts(frr_after)) is not None
+        )
         self.rec.check("INT-10", "After Ryu stops, neighbor drops and R2 route is withdrawn",
                        f"neighbor_down={lost}; FIB_withdrawn={withdrawn}; RIB_withdrawn={frr_withdrawn}",
                        lost and withdrawn and frr_withdrawn, [nl, klog, flog])
