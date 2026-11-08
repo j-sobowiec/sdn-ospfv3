@@ -127,11 +127,23 @@ class Peer:
             self.log.info("[OSPF][DBD] seq=0x%08x flags=%d", self.sequence, flags)
 
     def remember_summaries(self, body):
+        newest_self = None
         for offset in range(12, len(body), 20):
             header = OSPFv3_LSA_Hdr(body[offset:offset + 20])
             key = packets.lsa_key(header)
-            if key[2] != cfg.ROUTER_ID:
+            if key[2] == cfg.ROUTER_ID:
+                seq = int(header.seq)
+                if newest_self is None or (seq ^ 0x80000000) > (newest_self ^ 0x80000000):
+                    newest_self = seq
+            else:
                 self.requests[key] = header
+        if (newest_self is not None and
+                (newest_self ^ 0x80000000) >= (self.local_sequence ^ 0x80000000)):
+            if newest_self == 0x7fffffff:
+                raise ValueError("local LSA sequence number exhausted")
+            self.local_sequence = newest_self + 1
+            self.local = packets.local_lsas(
+                self.router_id, self.interface_id, self.local_sequence)
 
     def on_dbd(self, desc, body):
         if self.stage not in ("two-way", "exstart", "exchange", "loading",
