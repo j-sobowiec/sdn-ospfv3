@@ -1,0 +1,75 @@
+# sdn-ospfv3 — integracja SDN i OSPFv3
+
+Autorska aplikacja **Ryu i OpenFlow 1.3** integrująca sieć IPv6 zarządzaną
+przez SDN z klasycznymi routerami FRRouting. Ryu samodzielnie uczestniczy
+w OSPFv3; FRRouting działa wyłącznie w routerach R1, R2 i R3.
+To demonstracja dla jednej ustalonej topologii, a nie uniwersalny router.
+
+## Struktura
+
+| Plik | Odpowiedzialność |
+| --- | --- |
+| `controller.py` | Zdarzenia Ryu, OpenFlow, NDP i brama IPv6 |
+| `peer.py` | Sąsiad OSPFv3, Hello/DBD/LSR/LSU/LSAck, timery |
+| `packets.py` | Kodowanie, walidacja OSPFv3 i lokalne LSA przez Scapy |
+| `config.py` | Adresy IPv6, identyfikatory, porty i MAC |
+| `topology.py` | Containernet: trójkąt R1–R2–R3, S1, H1, H2 |
+| `run_ryu.py` | Launcher Ryu |
+
+Więcej: [architektura](docs/ARCHITEKTURA.md),
+[procedura testowania](docs/TESTY.md).
+
+## Uruchomienie na Ubuntu
+
+Wymagane: skonfigurowane Ryu, Scapy, Containernet, Docker, OVS i
+obraz `frrouting/frr` z demonem `ospf6d`.
+
+Terminal 1 (z katalogu repo, w sprawdzonym środowisku Ryu):
+
+```bash
+source ~/ryu-env/bin/activate
+python3 run_ryu.py --ofp-tcp-listen-port 6653 controller.py
+```
+
+Terminal 2 (z katalogu repo):
+
+```bash
+sudo python3 topology.py
+```
+
+Nie uruchamiaj drugiej instancji Ryu ani Containernet. Po około
+40–60 sekundach w konsoli `containernet>`:
+
+```text
+r1 vtysh -c 'show ipv6 ospf6 neighbor'
+r1 vtysh -c 'show ipv6 ospf6 database'
+r2 ip -6 route show 2001:db8:1::/64
+h1 ping -6 -c 5 2001:db8:2::100
+h2 ping -6 -c 5 2001:db8:1::100
+```
+
+Sprawdź `10.10.10.10 Full/PointToPoint` na R1, reklamę LAN
+`2001:db8:1::/64`, dynamiczną trasę na R2 i pingi w obu kierunkach.
+Instrukcja testu restartu Ryu jest w `docs/TESTY.md`.
+
+## Sprawdzenie składni
+
+```bash
+python3 -m compileall -q controller.py peer.py packets.py config.py topology.py run_ryu.py
+```
+
+Testy automatyczne będą przygotowane osobno w katalogu `tests/`.
+Obecnie poprawność integracji sprawdza się w Containernet według
+[procedury testowania](docs/TESTY.md).
+
+## Świadome ograniczenia
+
+- Jeden sąsiad FRRouting na łączu point-to-point, jeden obszar OSPFv3,
+  stałe porty/MAC i obsługa roli DBD Master.
+- Własne Hello, DBD, LSR, LSU, LSAck, lokalne Router/Link/Prefix-LSA
+  i retransmisje; brak pełnego routera, dowolnej wielosąsiedzkiej LSDB i SPF.
+- OVS przekazuje IPv6 za pomocą dwóch kierunków reguł OpenFlow.
+  NDP dotyczy znanych adresów bramy i tranzytu.
+- Kryteria demonstracji obejmują stan Full, dynamiczną trasę OSPF do LAN,
+  pingi H1↔H2 oraz odbudowanie sąsiedztwa po restarcie Ryu.
+  Testy długotrwałe i awarie łączy wymagają osobnej walidacji.
