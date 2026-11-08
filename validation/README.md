@@ -1,11 +1,19 @@
 # Walidacja OSPFv3 — testy offline i integracyjne
 
-Testy znajdują się osobno od kodu kontrolera. **Żaden raport ani katalog
-środowiska wirtualnego nie powinien trafiać do commita.** Poprzednia wersja
-`6c21526` (8.11.2026) uzyskała 29/29 PASS offline i 11/11 PASS dla Ryu +
-FRRouting + Containernet + OVS. Po poprawkach obsługi 1-WayReceived, DBD
-i DPID wynik offline to **39/39 PASS**; testy integracyjne nowego kodu
-pozostają do wykonania na Ubuntu.
+Testy są oddzielone od kodu kontrolera. Raporty generowane lokalnie i
+środowiska wirtualne są wykluczone z Git; **zachowaj raporty będące dowodami
+do pracy inżynierskiej w osobnym archiwum**.
+
+Historyczna dokumentacja deklarowała **29/29 PASS offline i 11/11 PASS
+integracyjnie** dla commita `6c21526` (8.11.2026), lecz dowody tych
+uruchomień nie znajdują się w repozytorium. Podane później **39/39 PASS**
+nie było jednoznacznie przypisane do commita.
+
+**Nowe uruchomienie offline (8.11.2026): 41/41 PASS** na kodzie commita
+`ca7348384a2776cf1213a0f3d0212f0c7591bd82` (Python 3.12.14,
+pytest 8.4.2, Scapy 2.6.1). Zmiany lokalne obejmowały wyłącznie Markdown
+i `.gitignore`. Raport: `validation/results/offline-20261108T161712Z/`
+(nieśledzony przez Git). **Nie uruchomiono integracji** dla tego commita.
 
 ## Szybki start
 
@@ -24,12 +32,21 @@ Domyślny interpreter Ryu to `~/ryu-env/bin/python3`. Można go zmienić:
 make preflight RYU_PYTHON=/inna/sciezka/ryu-env/bin/python3
 ```
 
-Jeśli nie używasz `make`, uruchom skrypty bezpośrednio:
+Jeśli nie używasz `make`, uruchom testy offline i kontrolę wymagań:
 
 ```bash
 .venv-validation/bin/python validation/run_offline.py --source "$PWD"
 /usr/bin/python3 validation/run_integration.py --source "$PWD" \
   --controller-python "$HOME/ryu-env/bin/python3"
+```
+
+Bez `--execute` drugi skrypt wykonuje **tylko preflight**. Pełną
+integrację uruchamiaj wyłącznie na dedykowanym Ubuntu, po świadomym
+potwierdzeniu skutków sieciowych (odpowiednik `make integration CONFIRM=YES`):
+
+```bash
+sudo /usr/bin/python3 validation/run_integration.py --execute \
+  --source "$PWD" --controller-python "$HOME/ryu-env/bin/python3"
 ```
 
 Testy integracyjne wymagają systemowego Pythona z Containernet, Docker,
@@ -66,8 +83,10 @@ Każdy start tworzy nowy katalog w `validation/results/` (ignorowany przez Git):
 - `offline-YYYY.../`: `run.log`, `junit.xml`, `test-results.json`, `environment.json`;
 - `integration-YYYY.../`: `summary.json`, `evidence/*.txt`, logi Ryu oraz wersje komponentów.
 
-W raporcie integracyjnym zapisywane są commit, stan Git i SHA-256 plików,
-żeby wynik można było przypisać do dokładnie uruchomionego kodu.
+Raport integracyjny zapisuje commit, stan Git i SHA-256 kluczowych plików
+źródłowych. Raport offline zapisuje commit i stan Git, ale bez sum plików;
+dla jednoznacznej identyfikacji najlepiej uruchamiać testy na czystym
+checkoutcie i archiwizować wyniki wraz z identyfikatorem commita.
 Nie usuwaj raportów potrzebnych do pracy inżynierskiej ani audytu.
 
 `run_offline.py` i `run_integration.py` obsługują `--results`, jeśli chcesz

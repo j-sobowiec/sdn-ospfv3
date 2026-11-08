@@ -13,9 +13,11 @@ h2 ping -6 -c 5 2001:db8:1::100
 h1 ping -6 -c 5 2001:db8:23::3
 ```
 
-Warunki akceptacji: sąsiad Ryu `10.10.10.10` ma `Full` na R1,
-lokalne LSA reklamują `2001:db8:1::/64`, R2 ma trasę `proto ospf`,
-a pingi działają w obu kierunkach. Na hoście Ubuntu sprawdź liczniki:
+Oczekiwane wyniki (do potwierdzenia na uruchomionej wersji): sąsiad
+Ryu `10.10.10.10` ma `Full` na R1, LSA reklamują `2001:db8:1::/64`,
+R2 ma trasę protokołu OSPFv3 w FRRouting i w tablicy Linux
+(np. `proto ospf6`), a pingi działają w obu kierunkach. Na hoście Ubuntu
+sprawdź liczniki:
 
 ```bash
 sudo ovs-ofctl -O OpenFlow13 dump-flows s1
@@ -24,18 +26,18 @@ sudo ovs-ofctl -O OpenFlow13 dump-flows s1
 ## Restart kontrolera
 
 Pozostaw Containernet uruchomiony. Zatrzymaj Ryu (`Ctrl+C`),
-odczekaj ponad Dead Interval (~40 s), potwierdź zanik sąsiada
-na R1 i uruchom Ryu ponownie. Oczekiwane: ponowny `Full`,
-odtworzona trasa OSPF, pingi w obie strony oraz odebrane
-`LSAck` bez stałego retransmitowania lokalnych LSU.
+odczekaj ponad Dead Interval (40 s według `config.py`), potwierdź
+zanik sąsiada na R1 i wycofanie trasy na R2, a następnie uruchom Ryu
+ponownie. Oczekiwane: ponowny `Full`, odtworzona trasa OSPF i pingi
+w obu kierunkach. Log kontrolera pozwala dodatkowo sprawdzić LSAck
+i retransmisje lokalnych LSU.
 
 ## Zalecane dodatkowe próby przed obroną
 
-- TCP i UDP w obu kierunkach wraz z weryfikacją danych.
 - Awaria i przywrócenie R1–R3, rekonwergencja przez R2.
 - Ponowne połączenie OVS z kontrolerem.
 - Działanie przez minimum 30–40 minut (Hello, Dead i LSA refresh).
-- Negatywne testy błędnych pakietów OSPFv3 oraz NDP.
+- Negatywne testy OSPFv3 i NDP w rzeczywistym środowisku sieciowym.
 
 Nie uznawaj tych prób za zaliczone bez zarejestrowanych wyników.
 
@@ -54,3 +56,7 @@ make integration CONFIRM=YES  # wyłącznie na dedykowanym Ubuntu
 Testy integracyjne samodzielnie uruchamiają i zatrzymują Ryu oraz Containernet;
 **nie** uruchamiaj ich równolegle z topologią z sekcji powyżej.
 Dowody trafiają do `validation/results/`, który jest wykluczony z Git.
+Wyniki należy archiwizować wraz z commitem i stanem drzewa Git;
+bez raportu z bieżącej wersji nie są one potwierdzeniem działania `main`.
+Kryteria `INT-01`–`INT-11` i format raportów opisuje
+[validation/README.md](../validation/README.md).

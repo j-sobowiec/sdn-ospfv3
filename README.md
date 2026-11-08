@@ -23,8 +23,11 @@ Więcej: [architektura](docs/ARCHITEKTURA.md),
 
 ## Uruchomienie na Ubuntu
 
-Wymagane: skonfigurowane Ryu, Scapy, Containernet, Docker, OVS i
-obraz `frrouting/frr` z demonem `ospf6d`.
+Wymagane: Ubuntu z Pythonem 3, środowisko Ryu z Eventlet i Scapy,
+Containernet, Docker, Open vSwitch (OpenFlow 1.3) oraz obraz
+`frrouting/frr` z demonem `ospf6d`. Repozytorium nie zawiera instalatora
+tych komponentów ani przypiętych wersji całego środowiska; domyślnie
+`topology.py` pobiera `frrouting/frr:latest` (można ustawić `FRR_IMAGE`).
 
 Terminal 1 (z katalogu repo, w sprawdzonym środowisku Ryu):
 
@@ -39,8 +42,8 @@ Terminal 2 (z katalogu repo):
 sudo python3 topology.py
 ```
 
-Nie uruchamiaj drugiej instancji Ryu ani Containernet. Po około
-40–60 sekundach w konsoli `containernet>`:
+Nie uruchamiaj drugiej instancji Ryu ani Containernet. Po zestawieniu
+sąsiedztwa (czas zależy od środowiska) w konsoli `containernet>`:
 
 ```text
 r1 vtysh -c 'show ipv6 ospf6 neighbor'
@@ -71,11 +74,12 @@ bez innych uruchomionych instancji Ryu/Containernet:
 make integration CONFIRM=YES
 ```
 
-Wersja `6c21526` (8.11.2026) uzyskała **29/29 PASS offline i 11/11 PASS
-integracyjnie**. Po kolejnych poprawkach obsługi Hello/DBD i ochrony DPID
-testy offline mają **39/39 PASS**; integracja nowej wersji wymaga ponownej
-walidacji na Ubuntu. Każde uruchomienie zapisuje własne dowody
-w ignorowanym przez Git katalogu `validation/results/`.
+Na kodzie commita `ca734838` audyt z 8.11.2026 potwierdził
+**41/41 PASS offline** (bez zmian w plikach Pythona); integracji tej
+wersji nie uruchamiano. Wcześniejsza dokumentacja podawała **11/11 PASS
+integracyjnie** dla `6c21526` — nie jest to dowód działania obecnego
+`main`. Wyniki uruchomień trafiają do ignorowanego przez Git
+`validation/results/`; raporty potrzebne do pracy należy archiwizować.
 Pełne instrukcje, wymagania i opis kryteriów: [validation/README.md](validation/README.md).
 
 ## Sprawdzenie składni
