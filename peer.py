@@ -11,6 +11,21 @@ import config as cfg
 import packets
 
 
+def lsa_is_newer(incoming, current):
+    """Compare LSA instances according to RFC 2328 section 13.1."""
+    incoming_seq = int(incoming.seq) ^ 0x80000000
+    current_seq = int(current.seq) ^ 0x80000000
+    if incoming_seq != current_seq:
+        return incoming_seq > current_seq
+    if int(incoming.chksum) != int(current.chksum):
+        return int(incoming.chksum) > int(current.chksum)
+    incoming_age, current_age = int(incoming.age), int(current.age)
+    if (incoming_age == 3600) != (current_age == 3600):
+        return incoming_age == 3600
+    return (abs(incoming_age - current_age) > 900
+            and incoming_age < current_age)
+
+
 class Peer:
     def __init__(self, send, logger, clock=time.monotonic):
         self.send = send
@@ -271,8 +286,16 @@ class Peer:
             return
         self.transmit(packets.lsack([wire[:20] for _, wire in received],
                                      self.address, self.mac), "LSAck")
+        newest_self = None
         for hdr, _ in received:
             key = packets.lsa_key(hdr)
+            if key[2] == cfg.ROUTER_ID and key in self.local:
+                current = OSPFv3_LSA_Hdr(self.local[key][:20])
+                if lsa_is_newer(hdr, current):
+                    seq = int(hdr.seq)
+                    if (newest_self is None
+                            or (seq ^ 0x80000000) > (newest_self ^ 0x80000000)):
+                        newest_self = seq
             expected = self.requests.get(key)
             if expected is None:
                 continue
@@ -282,6 +305,21 @@ class Peer:
                     (received_seq == expected_seq
                      and int(hdr.chksum) >= int(expected.chksum))):
                 del self.requests[key]
+        if newest_self is not None:
+            if newest_self == 0x7fffffff:
+                self.log.error("[OSPF] cannot fight back MaxSequenceNumber LSA")
+            else:
+                self.local_sequence = max(
+                    self.local_sequence ^ 0x80000000,
+                    newest_self ^ 0x80000000) ^ 0x80000000
+                self.local_sequence += 1
+                self.local = packets.local_lsas(
+                    self.router_id, self.interface_id, self.local_sequence)
+                if self.stage == "synchronized":
+                    self.send_local_update()
+                    self.local_refreshed_at = self.clock()
+                self.log.info("[OSPF] re-originated newer self-LSA at seq=0x%08x",
+                              self.local_sequence)
         if self.stage == "loading" and not self.requests:
             self.finish_loading()
 

@@ -95,27 +95,35 @@ def source_fingerprints(source):
 
 
 def is_full(text):
-    # FRRouting plain-text neighbor output: ID and Full on the same line.
-    return any("10.10.10.10" in line and re.search(r"\bFull\b", line, re.I)
+    # Match the complete Router ID, not a substring of another neighbor ID.
+    router_id = re.compile(r"(?<![\d.])10\.10\.10\.10(?![\d.])")
+    return any(router_id.search(line) and re.search(r"\bFull\b", line, re.I)
                for line in text.splitlines())
 
 
 def ospf_route_present(frr_table, kernel_table):
-    # Both the FRR protocol RIB and the Linux FIB must agree. A kernel-only
-    # static route, or an OSPF entry not installed in the FIB, is insufficient.
-    frr_has = PREFIX in frr_table or "2001:db8:1::/64" in frr_table.lower()
-    kernel_lines = [line.lower() for line in kernel_table.splitlines()
-                    if "2001:db8:1::/64" in line.lower()]
-    # iproute2 displays FRR protocol labels as ospf6, ospf, or numeric 188.
-    kernel_has = any(re.search(r"\bproto\s+(ospf6?|188)\b", line)
-                     for line in kernel_lines)
+    # FRR ospf6d uses N / *N (possibly IA/E1/E2); some outputs use I or O.
+    # Require an actual route row, not a diagnostic mentioning the prefix.
+    frr_route = re.compile(
+        r"^\s*\*?(?:N(?:\s+(?:IA|E1|E2))?|I(?:A)?|O[>*]*)\s+"
+        + re.escape(PREFIX) + r"(?=\s|$)", re.I)
+    frr_has = any(frr_route.search(line) for line in frr_table.splitlines())
+    # A kernel route must likewise begin with the exact prefix and be OSPF.
+    kernel_route = re.compile(r"^\s*" + re.escape(PREFIX) + r"(?=\s|$)", re.I)
+    kernel_has = any(
+        kernel_route.search(line)
+        and re.search(r"\bproto\s+(?:ospf6?|188)\b", line, re.I)
+        for line in kernel_table.splitlines())
     return frr_has and kernel_has
 
 
-def ping_success(output):
+def ping_success(output, expected_packets=5):
+    packets = re.search(r"\b(\d+) packets transmitted,\s*(\d+) received\b", output)
     loss = re.search(r"(?<!\d)(\d+(?:\.\d+)?)% packet loss\b", output)
-    return (loss is not None and float(loss.group(1)) == 0 and
-            re.search(r"\b([1-9]\d*) received\b", output) is not None)
+    return (packets is not None and loss is not None
+            and int(packets.group(1)) == expected_packets
+            and int(packets.group(2)) == expected_packets
+            and float(loss.group(1)) == 0)
 
 
 def strip_terminal_artifacts(output):
@@ -135,13 +143,31 @@ def kernel_route_missing(output):
 def forwarding_flows_have_packets(output):
     matched = set()
     for line in output.splitlines():
-        if "priority=100" not in line or "actions=" not in line:
+        if not re.search(r"\bpriority=100\b", line) or "actions=" not in line:
             continue
         count = re.search(r"\bn_packets=(\d+)\b", line)
         port = re.search(r"\bin_port=([12])\b", line)
-        if count and int(count.group(1)) > 0 and port:
+        if not (count and int(count.group(1)) > 0 and port
+                and re.search(r"\bipv6\b", line.split("actions=", 1)[0])):
+            continue
+        actions = line.split("actions=", 1)[1]
+        expected_output = "2" if port.group(1) == "1" else "1"
+        if (re.search(r"\bdec_ttl\b", actions)
+                and re.search(r"\boutput:" + expected_output + r"\b", actions)
+                and "->eth_src" in actions and "->eth_dst" in actions):
             matched.add(port.group(1))
     return matched == {"1", "2"}
+
+
+def integration_status(records, exception=False):
+    if exception:
+        return "BLOCKED"
+    expected = {f"INT-{number:02d}" for number in range(1, 12)}
+    if len(records) != 11 or {item["test"] for item in records} != expected:
+        return "BLOCKED"
+    if any(item["status"] == "FAIL" for item in records):
+        return "FAIL"
+    return "PASS" if all(item["status"] == "PASS" for item in records) else "BLOCKED"
 
 
 def application_payload_probe(sender, receiver, address, transport, port):
@@ -428,7 +454,7 @@ class Harness:
         recover_pings = []
         for host, addr in ((h1, "2001:db8:2::100"), (h2, "2001:db8:1::100")):
             raw, log = self.query(host, "recovered-ping", f"ping -6 -n -c 3 -W 2 {addr}")
-            recover_pings.append(ping_success(raw))
+            recover_pings.append(ping_success(raw, expected_packets=3))
             rlogs.append(log)
         self.rec.check("INT-11", "Full, protocol route and both IPv6 pings recover after Ryu restarts",
                        f"Full={again}; OSPF route={recovered_route}; pings={recover_pings}",
@@ -504,9 +530,8 @@ def main():
         harness.stop_controller()
         metadata["tests"] = harness.rec.records
         metadata["finished_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
-        metadata["status"] = ("BLOCKED" if "exception" in metadata else
-                              "FAIL" if any(test["status"] == "FAIL" for test in metadata["tests"])
-                              else "PASS" if len(metadata["tests"]) == 11 else "BLOCKED")
+        metadata["status"] = integration_status(
+            metadata["tests"], exception="exception" in metadata)
         (output / "summary.json").write_text(json.dumps(metadata, indent=2) + "\n")
         print("Evidence:", output)
     return {"PASS": 0, "FAIL": 1, "BLOCKED": 2}[metadata["status"]]

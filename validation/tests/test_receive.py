@@ -5,7 +5,7 @@ import struct
 
 import pytest
 from scapy.contrib.ospf import (OSPFv3_DBDesc, OSPFv3_Hdr, OSPFv3_Hello,
-                                OSPFv3_LSReq, OSPFv3_LSReq_Item)
+                                OSPFv3_LSReq, OSPFv3_LSReq_Item, OSPFv3_LSUpd)
 from scapy.layers.inet6 import IPv6
 from scapy.layers.l2 import Ether
 from scapy.packet import Raw
@@ -355,3 +355,19 @@ def test_duplicate_final_dbd_after_full_is_ignored():
     assert peer.stage == "synchronized"
     assert peer.sequence == old_sequence
     assert len(sent) == sent_before
+
+
+def test_newer_self_originated_lsa_in_lsu_is_fought_back():
+    peer, _, sent = synchronized_peer()
+    old_sequence = peer.local_sequence
+    newer = packets.local_lsas(peer.router_id, peer.interface_id,
+                               sequence=old_sequence + 3)
+    router_lsa = next(wire for key, wire in newer.items() if key[0] == 0x2001)
+    before = len(sent)
+    peer.receive(inbound(OSPFv3_LSUpd(lsacount=1) / Raw(router_lsa), 4))
+    assert peer.stage == "synchronized"
+    assert peer.local_sequence == old_sequence + 4
+    assert kinds(sent)[before:] == [5, 4]  # LSAck, then newer local LSU
+    assert {struct.unpack("!I", wire[12:16])[0] for wire in peer.local.values()} == {
+        old_sequence + 4}
+    assert len(peer.pending_acks) == 3
