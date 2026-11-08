@@ -17,7 +17,8 @@ i `.gitignore`. Raport: `validation/results/offline-20261108T161712Z/`
 
 ## Szybki start
 
-W katalogu głównym repozytorium:
+Na Ubuntu wymagany jest pakiet systemowy `python3-venv` do utworzenia
+środowiska testowego. W katalogu głównym repozytorium:
 
 | Polecenie | Co robi |
 | --- | --- |
