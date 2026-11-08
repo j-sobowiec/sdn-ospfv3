@@ -41,11 +41,16 @@ Nie uznawaj tych prób za zaliczone bez zarejestrowanych wyników.
 
 ## Automatyczne
 
-Dedykowany zestaw testów automatycznych zostanie dodany w późniejszym etapie.
-Na obecnym etapie można sprawdzić składnię:
+Projekt ma już [zestaw 29 testów offline i 11 integracyjnych](../validation/README.md).
+Z katalogu głównego repozytorium:
 
 ```bash
-python3 -m compileall -q controller.py peer.py packets.py config.py topology.py run_ryu.py
+make setup-tests              # jednorazowo
+make test                     # offline, bez uprawnień administratora
+make preflight                # bez zmian sieciowych
+make integration CONFIRM=YES  # wyłącznie na dedykowanym Ubuntu
 ```
 
-Sprawdzenie składni nie zastępuje testów OSPFv3 ani testów integracyjnych.
+Testy integracyjne samodzielnie uruchamiają i zatrzymują Ryu oraz Containernet;
+**nie** uruchamiaj ich równolegle z topologią z sekcji powyżej.
+Dowody trafiają do `validation/results/`, który jest wykluczony z Git.

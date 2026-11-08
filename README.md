@@ -15,6 +15,8 @@ To demonstracja dla jednej ustalonej topologii, a nie uniwersalny router.
 | `config.py` | Adresy IPv6, identyfikatory, porty i MAC |
 | `topology.py` | Containernet: trójkąt R1–R2–R3, S1, H1, H2 |
 | `run_ryu.py` | Launcher Ryu |
+| `validation/` | 29 testów offline, 11 testów integracyjnych i raporty |
+| `Makefile` | Krótkie polecenia do uruchamiania testów |
 
 Więcej: [architektura](docs/ARCHITEKTURA.md),
 [procedura testowania](docs/TESTY.md).
@@ -52,15 +54,35 @@ Sprawdź `10.10.10.10 Full/PointToPoint` na R1, reklamę LAN
 `2001:db8:1::/64`, dynamiczną trasę na R2 i pingi w obu kierunkach.
 Instrukcja testu restartu Ryu jest w `docs/TESTY.md`.
 
+## Testy automatyczne
+
+Na Ubuntu, z katalogu repozytorium:
+
+```bash
+make setup-tests  # jednorazowo: pytest i Scapy w osobnym venv
+make test         # testy offline, bez sudo
+make preflight    # weryfikacja wymagań Containernet i Ryu
+```
+
+Pełne testy integracyjne uruchamiaj **wyłącznie na dedykowanym hoście testowym**,
+bez innych uruchomionych instancji Ryu/Containernet:
+
+```bash
+make integration CONFIRM=YES
+```
+
+Ostatnia ręczna walidacja (8.11.2026, commit `6c21526`) zakończyła się
+**29/29 PASS offline i 11/11 PASS integracyjnie**. Nowe uruchomienie zapisuje
+własne dowody w ignorowanym przez Git katalogu `validation/results/`.
+Pełne instrukcje, wymagania i opis kryteriów: [validation/README.md](validation/README.md).
+
 ## Sprawdzenie składni
 
 ```bash
 python3 -m compileall -q controller.py peer.py packets.py config.py topology.py run_ryu.py
 ```
 
-Testy automatyczne będą przygotowane osobno w katalogu `tests/`.
-Obecnie poprawność integracji sprawdza się w Containernet według
-[procedury testowania](docs/TESTY.md).
+Ręczna procedura testowania jest w [docs/TESTY.md](docs/TESTY.md).
 
 ## Świadome ograniczenia
 

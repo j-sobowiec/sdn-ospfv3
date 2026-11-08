@@ -7,6 +7,7 @@ __pycache__/
 
 # Python environments and generated artifacts
 .venv/
+/.venv-validation/
 venv/
 ryu-env/
 *.egg-info/
@@ -17,6 +18,10 @@ dist/
 *.log
 *.bak
 *.bak_*
+/validation.backup-*/
+# Jednorazowe pliki użyte przy wdrożeniu poprawek z audytu
+/FIX_README.md
+/peer_fix.patch
 
 # IDE / OS
 .vscode/
