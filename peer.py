@@ -28,6 +28,8 @@ class Peer:
         self.stage = "down"
         self.sequence = 0
         self.last_dbd = None
+        self.last_peer_dbd = None
+        self.peer_dbd_options = None
         self.dbd_sent_at = 0
         self.requests = {}
         self.lsr_sent_at = 0
@@ -116,12 +118,22 @@ class Peer:
         if discovered:
             self.stage = "init"
             self.send_hello()
-        if cfg.ROUTER_ID in hello.neighbors and self.stage == "init":
+        if cfg.ROUTER_ID not in hello.neighbors:
+            if self.stage not in ("down", "init"):
+                # RFC 2328 10.3/10.5: 1-WayReceived takes every state from
+                # 2-Way upwards back to Init, while preserving the neighbor.
+                self.log.warning("[OSPF] neighbor no longer lists our Router ID")
+                self.stage = "init"
+                self.clear_exchange_state()
+                self.local.clear()
+            return
+        if self.stage == "init":
             if int(ipaddress.IPv4Address(cfg.ROUTER_ID)) <= int(
                     ipaddress.IPv4Address(self.router_id)):
                 raise ValueError("demo requires controller to be DBD master")
             self.stage = "two-way"
-            self.local = packets.local_lsas(self.router_id, self.interface_id)
+            self.local = packets.local_lsas(
+                self.router_id, self.interface_id, self.local_sequence)
             self.log.info("[OSPF] neighbor %s: Init -> 2-Way", self.router_id)
 
     def send_dbd(self, flags):
@@ -157,21 +169,43 @@ class Peer:
         if not 0 < int(desc.mtu) <= cfg.MTU:
             raise ValueError("DBD MTU mismatch")
         flags, seq = int(desc.dbdescr), int(desc.ddseq)
+        options = int(desc.options)
+        identity = (flags, seq, options)
         self.log.info("[OSPF][DBD RX] seq=0x%08x flags=%d summaries=%d",
                       seq, flags, (len(body) - 12) // 20)
+        if self.stage in ("loading", "synchronized"):
+            # A master ignores an exact duplicate of the last accepted DBD.
+            # Any different DBD after exchange is SeqNumberMismatch.
+            if identity != self.last_peer_dbd:
+                self.restart_exchange("SeqNumberMismatch: unexpected DBD after exchange")
+            return
         if flags == 7 and len(body) == 12:
             if self.stage in ("two-way", "exstart"):
                 if self.stage == "two-way":
                     self.sequence = int(time.time() * 1000) & 0xffffffff
                     self.stage = "exstart"
                 self.send_dbd(7)
+            else:
+                self.restart_exchange("SeqNumberMismatch: unexpected initial DBD")
             return
-        if flags & 5 or self.stage not in ("exstart", "exchange"):
+        if flags & 5:
+            if self.stage == "exchange":
+                self.restart_exchange("SeqNumberMismatch: unexpected DBD flags")
+            return
+        if self.stage not in ("exstart", "exchange"):
             return
         if seq != self.sequence:
-            if seq == (self.sequence - 1) & 0xffffffff and self.last_dbd:
+            if (seq == (self.sequence - 1) & 0xffffffff
+                    and identity == self.last_peer_dbd and self.last_dbd):
                 self.transmit(self.last_dbd, "DBD duplicate")
+            elif self.stage == "exchange":
+                self.restart_exchange("SeqNumberMismatch: unexpected DD sequence")
             return
+        if self.peer_dbd_options is not None and options != self.peer_dbd_options:
+            self.restart_exchange("SeqNumberMismatch: DBD Options changed")
+            return
+        self.peer_dbd_options = options
+        self.last_peer_dbd = identity
         self.remember_summaries(body)
         if self.stage == "exstart" or flags & 2:
             self.stage = "exchange"
@@ -216,13 +250,19 @@ class Peer:
         self.log.warning("[OSPF] %s; restarting database exchange", reason)
         self.stage = "exstart"
         self.sequence = (self.sequence + 1) & 0xffffffff
+        self.clear_exchange_state()
+        self.send_dbd(7)
+
+    def clear_exchange_state(self):
+        """Forget protocol exchange state, retaining the neighbor identity."""
         self.last_dbd = None
+        self.last_peer_dbd = None
+        self.peer_dbd_options = None
         self.dbd_sent_at = 0
         self.requests.clear()
         self.lsr_sent_at = 0
         self.pending_acks.clear()
         self.local_sent_at = 0
-        self.send_dbd(7)
 
     def on_lsu(self, body):
         received = packets.lsa_headers(body)

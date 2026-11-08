@@ -9,7 +9,7 @@ PROJECT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 help:
 	@printf '%s\n' \
 	  'make setup-tests          - przygotuj osobne środowisko testowe' \
-	  'make test                 - 29 testów offline (bez sudo)' \
+	  'make test                 - testy offline (bez sudo)' \
 	  'make preflight            - sprawdź gotowość integracji (bez zmian sieci)' \
 	  'make integration CONFIRM=YES - 11 testów na dedykowanym Ubuntu (sudo)'
 

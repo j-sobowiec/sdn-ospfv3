@@ -41,7 +41,7 @@ Nie uznawaj tych prób za zaliczone bez zarejestrowanych wyników.
 
 ## Automatyczne
 
-Projekt ma już [zestaw 29 testów offline i 11 integracyjnych](../validation/README.md).
+Projekt ma już [testy offline i 11 scenariuszy integracyjnych](../validation/README.md).
 Z katalogu głównego repozytorium:
 
 ```bash

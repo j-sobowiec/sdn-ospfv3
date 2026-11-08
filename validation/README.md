@@ -1,9 +1,11 @@
-# Walidacja OSPFv3 — 29 offline + 11 integracyjnych
+# Walidacja OSPFv3 — testy offline i integracyjne
 
 Testy znajdują się osobno od kodu kontrolera. **Żaden raport ani katalog
-środowiska wirtualnego nie powinien trafiać do commita.** Ostatni potwierdzony
-wynik na Ubuntu (8.11.2026, commit `6c21526`) to 29/29 PASS offline i
-11/11 PASS dla Ryu + FRRouting + Containernet + OVS.
+środowiska wirtualnego nie powinien trafiać do commita.** Poprzednia wersja
+`6c21526` (8.11.2026) uzyskała 29/29 PASS offline i 11/11 PASS dla Ryu +
+FRRouting + Containernet + OVS. Po poprawkach obsługi 1-WayReceived, DBD
+i DPID wynik offline to **39/39 PASS**; testy integracyjne nowego kodu
+pozostają do wykonania na Ubuntu.
 
 ## Szybki start
 
@@ -12,7 +14,7 @@ W katalogu głównym repozytorium:
 | Polecenie | Co robi |
 | --- | --- |
 | `make setup-tests` | Jednorazowo tworzy `.venv-validation` i instaluje pytest/Scapy |
-| `make test` | Uruchamia **29 testów offline** bez `sudo` |
+| `make test` | Uruchamia testy offline bez `sudo` |
 | `make preflight` | Sprawdza zależności integracji **bez zmian sieci** |
 | `make integration CONFIRM=YES` | Uruchamia **11 testów rzeczywistych**; wymaga `sudo` i dedykowanego Ubuntu |
 
@@ -46,6 +48,7 @@ inna instancja Ryu ani Containernet. Bez `CONFIRM=YES` polecenie odmawia startu.
 | `tests/test_wire.py` | Format OSPFv3, LSA, checksum IPv6 i Fletcher |
 | `tests/test_receive.py` | Hello/DBD/LSR/LSU/LSAck, E-bit, BadLSReq, retransmisje i timery |
 | `tests/test_harness.py` | Zabezpieczenia przed pozornym PASS i fałszywym błędem terminala |
+| `tests/test_controller_safety.py` | Odrzucanie obcego DPID bez zmian w OpenFlow |
 | `INT-01`–`INT-04` | Sąsiedztwo Full, RIB/FIB i LSDB we FRRouting |
 | `INT-05`–`INT-08` | ICMPv6, TCP i UDP IPv6 w obu kierunkach |
 | `INT-09` | Ruch na regułach OpenFlow 1.3 |

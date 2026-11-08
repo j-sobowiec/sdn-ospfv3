@@ -51,6 +51,10 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_ready(self, event):
         dp = event.msg.datapath
+        if dp.id != cfg.SWITCH_DPID:
+            # Never clear flows or reset the neighbor on an unknown switch.
+            self.logger.error("[OPENFLOW] unexpected DPID %d", dp.id)
+            return
         self.datapath = dp
         self.peer.reset()
         p, ofp = dp.ofproto_parser, dp.ofproto
@@ -61,9 +65,6 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
 
         punt = [p.OFPActionOutput(ofp.OFPP_CONTROLLER, ofp.OFPCML_NO_BUFFER)]
         self.flow(0, {}, punt)
-        if dp.id != cfg.SWITCH_DPID:
-            self.logger.error("[OPENFLOW] unexpected DPID %d", dp.id)
-            return
         self.flow(200, dict(in_port=cfg.LAN_PORT, eth_type=0x86dd,
                             ipv6_dst=("2001:db8:1::", "ffff:ffff:ffff:ffff::")), punt)
 

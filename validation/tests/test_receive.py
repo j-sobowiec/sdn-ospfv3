@@ -36,9 +36,9 @@ def hello(*, neighbors=(), hello_interval=cfg.HELLO_INTERVAL,
     return inbound(body, 1, router=router, mac=mac)
 
 
-def dbd(sequence, flags):
+def dbd(sequence, flags, *, options=cfg.OPTIONS):
     return inbound(OSPFv3_DBDesc(
-        mtu=cfg.MTU, options=cfg.OPTIONS, dbdescr=flags,
+        mtu=cfg.MTU, options=options, dbdescr=flags,
         ddseq=sequence, lsaheaders=[]), 2)
 
 
@@ -66,6 +66,16 @@ def fresh_peer():
 
 def kinds(sent):
     return [raw[55] for raw in sent]  # ethernet(14) + IPv6(40) + OSPF type byte
+
+
+def synchronized_peer():
+    peer, clock, sent = fresh_peer()
+    peer.receive(hello(neighbors=[cfg.ROUTER_ID]))
+    peer.receive(dbd(123, 7))
+    peer.receive(dbd(peer.sequence, 2))
+    peer.receive(dbd(peer.sequence, 0))
+    assert peer.stage == "synchronized"
+    return peer, clock, sent
 
 
 def test_accepts_valid_inbound_hello():
@@ -245,3 +255,103 @@ def test_lsr_during_two_way_is_ignored_before_database_exchange():
     count_before = len(sent)
     peer.receive(inbound(request, 3))
     assert peer.stage == "two-way" and len(sent) == count_before
+
+
+def test_one_way_hello_downgrades_adjacency_and_clears_exchange_state():
+    """A Hello omitting our RID is a 1-WayReceived event, even from Full."""
+    peer, _, _ = synchronized_peer()
+    assert peer.local and peer.pending_acks
+    peer.receive(hello(neighbors=[]))
+    assert peer.stage == "init"
+    assert peer.router_id == "1.1.1.1"  # still a known one-way neighbor
+    assert not peer.requests and not peer.pending_acks
+    assert not peer.local and peer.last_dbd is None
+
+
+def test_adjacency_can_recover_after_one_way_hello():
+    peer, _, _ = synchronized_peer()
+    peer.local_sequence += 3  # emulate LSAs already refreshed on this link
+    old_lsa_seq = peer.local_sequence
+    peer.receive(hello(neighbors=[]))
+    peer.receive(hello(neighbors=[cfg.ROUTER_ID]))
+    assert peer.stage == "two-way"
+    assert peer.local_sequence == old_lsa_seq
+    assert {struct.unpack("!I", raw[12:16])[0] for raw in peer.local.values()} == {
+        old_lsa_seq}
+    peer.receive(dbd(123, 7))
+    peer.receive(dbd(peer.sequence, 2))
+    peer.receive(dbd(peer.sequence, 0))
+    assert peer.stage == "synchronized"
+
+
+def test_wrong_dbd_sequence_during_exchange_restarts_negotiation():
+    peer, _, sent = fresh_peer()
+    peer.receive(hello(neighbors=[cfg.ROUTER_ID]))
+    peer.receive(dbd(123, 7))
+    peer.receive(dbd(peer.sequence, 2))
+    assert peer.stage == "exchange"
+    old_sequence = peer.sequence
+    peer.receive(dbd((old_sequence + 5) & 0xffffffff, 0))
+    assert peer.stage == "exstart"
+    assert peer.sequence == (old_sequence + 1) & 0xffffffff
+    assert kinds(sent)[-1] == 2 and sent[-1][77] == 7
+
+
+def test_dbd_without_master_negotiation_does_not_leave_two_way():
+    peer, _, sent = fresh_peer()
+    peer.receive(hello(neighbors=[cfg.ROUTER_ID]))
+    assert peer.stage == "two-way"
+    before = len(sent)
+    peer.receive(dbd(0, 0))
+    assert peer.stage == "two-way"
+    assert len(sent) == before
+
+
+def test_duplicate_dbd_during_exchange_keeps_the_exchange_alive():
+    peer, _, sent = fresh_peer()
+    peer.receive(hello(neighbors=[cfg.ROUTER_ID]))
+    peer.receive(dbd(123, 7))
+    peer.receive(dbd(peer.sequence, 2))
+    assert peer.stage == "exchange"
+    seq = peer.sequence
+    last_sent = sent[-1]
+    peer.receive(dbd((seq - 1) & 0xffffffff, 2))
+    assert peer.stage == "exchange" and peer.sequence == seq
+    assert sent[-1] == last_sent  # retransmit our previous DBD
+
+
+def test_unexpected_slave_master_flag_during_exchange_restarts():
+    peer, _, _ = fresh_peer()
+    peer.receive(hello(neighbors=[cfg.ROUTER_ID]))
+    peer.receive(dbd(123, 7))
+    peer.receive(dbd(peer.sequence, 2))
+    assert peer.stage == "exchange"
+    peer.receive(dbd(peer.sequence, 4))  # slave falsely asserts MS=1
+    assert peer.stage == "exstart"
+
+
+def test_fresh_initial_dbd_after_full_restarts_negotiation():
+    peer, _, sent = synchronized_peer()
+    peer.receive(dbd(987, 7))
+    assert peer.stage == "exstart"
+    assert kinds(sent)[-1] == 2 and sent[-1][77] == 7
+
+
+def test_changed_dbd_options_during_exchange_restarts_negotiation():
+    peer, _, _ = fresh_peer()
+    peer.receive(hello(neighbors=[cfg.ROUTER_ID]))
+    peer.receive(dbd(123, 7))
+    peer.receive(dbd(peer.sequence, 2))
+    assert peer.stage == "exchange"
+    peer.receive(dbd(peer.sequence, 0, options=cfg.OPTIONS ^ 0x01))
+    assert peer.stage == "exstart"
+
+
+def test_duplicate_final_dbd_after_full_is_ignored():
+    peer, _, sent = synchronized_peer()
+    old_sequence = peer.sequence
+    sent_before = len(sent)
+    peer.receive(dbd(old_sequence, 0))
+    assert peer.stage == "synchronized"
+    assert peer.sequence == old_sequence
+    assert len(sent) == sent_before

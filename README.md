@@ -15,7 +15,7 @@ To demonstracja dla jednej ustalonej topologii, a nie uniwersalny router.
 | `config.py` | Adresy IPv6, identyfikatory, porty i MAC |
 | `topology.py` | Containernet: trójkąt R1–R2–R3, S1, H1, H2 |
 | `run_ryu.py` | Launcher Ryu |
-| `validation/` | 29 testów offline, 11 testów integracyjnych i raporty |
+| `validation/` | Testy offline, 11 testów integracyjnych i raporty |
 | `Makefile` | Krótkie polecenia do uruchamiania testów |
 
 Więcej: [architektura](docs/ARCHITEKTURA.md),
@@ -71,9 +71,11 @@ bez innych uruchomionych instancji Ryu/Containernet:
 make integration CONFIRM=YES
 ```
 
-Ostatnia ręczna walidacja (8.11.2026, commit `6c21526`) zakończyła się
-**29/29 PASS offline i 11/11 PASS integracyjnie**. Nowe uruchomienie zapisuje
-własne dowody w ignorowanym przez Git katalogu `validation/results/`.
+Wersja `6c21526` (8.11.2026) uzyskała **29/29 PASS offline i 11/11 PASS
+integracyjnie**. Po kolejnych poprawkach obsługi Hello/DBD i ochrony DPID
+testy offline mają **39/39 PASS**; integracja nowej wersji wymaga ponownej
+walidacji na Ubuntu. Każde uruchomienie zapisuje własne dowody
+w ignorowanym przez Git katalogu `validation/results/`.
 Pełne instrukcje, wymagania i opis kryteriów: [validation/README.md](validation/README.md).
 
 ## Sprawdzenie składni
