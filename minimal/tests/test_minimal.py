@@ -23,9 +23,9 @@ PEER_ID = "1.1.1.1"
 PEER_IP = "fe80::1"
 
 
-def incoming(kind, body):
+def incoming(kind, body, destination=cfg.LINK_LOCAL, hop_limit=1):
     return bytes(Ether(src=cfg.FRR_MAC, dst=cfg.GATEWAY_MAC) /
-                 IPv6(src=PEER_IP, dst=cfg.LINK_LOCAL, nh=89, hlim=1) /
+                 IPv6(src=PEER_IP, dst=destination, nh=89, hlim=hop_limit) /
                  OSPFv3_Hdr(type=kind, src=PEER_ID, area=cfg.AREA_ID) / body)
 
 
@@ -85,6 +85,14 @@ class WireTests(unittest.TestCase):
         self.assertEqual([packets.decode(frame)[2].type for frame in frames],
                          [1, 2, 3, 4, 5])
 
+    def test_lsack_unicast_hop_limit_64_is_valid_but_multicast_is_not(self):
+        lsa = remote_router_lsa()
+        ack = packets.OSPFv3_LSAck(lsaheaders=[OSPFv3_LSA_Hdr(lsa[:20])])
+        self.assertEqual(packets.decode(incoming(5, ack, hop_limit=64))[2].type, 5)
+        with self.assertRaisesRegex(ValueError, "Hop Limit"):
+            packets.decode(incoming(5, ack, destination=packets.ALL_ROUTERS,
+                                    hop_limit=64))
+
     def test_truncated_and_corrupted_packets_rejected(self):
         lsa = remote_router_lsa()
         frame = incoming(4, packets.OSPFv3_LSUpd(lsacount=1) / packets.Raw(lsa))
@@ -141,6 +149,39 @@ class PeerTests(unittest.TestCase):
         self.peer.receive(incoming(5, packets.OSPFv3_LSAck(lsaheaders=[
             OSPFv3_LSA_Hdr(wire[:20]) for wire in self.peer.local.values()])))
         self.assertEqual(self.peer.pending_acks, {})
+
+    def test_unicast_lsack_after_restart_clears_retransmit_queue(self):
+        lsa = self.negotiate()
+        self.peer.receive(incoming(4, packets.OSPFv3_LSUpd(lsacount=1)
+                                   / packets.Raw(lsa)))
+        self.assertEqual(len(self.peer.pending_acks), 3)
+        self.peer.receive(incoming(5, packets.OSPFv3_LSAck(lsaheaders=[
+            OSPFv3_LSA_Hdr(wire[:20]) for wire in self.peer.local.values()]),
+            hop_limit=64))
+        self.assertEqual(self.peer.pending_acks, {})
+        before = len(self.sent)
+        self.now[0] += cfg.RETRANSMIT_INTERVAL + 1
+        self.peer.tick()
+        self.assertEqual(len([frame for frame in self.sent[before:]
+                              if Ether(frame)[IPv6].payload.type == 4]), 0)
+
+    def test_restart_bumps_sequences_from_peer_dbd_summaries(self):
+        self.hello()
+        self.hello([cfg.ROUTER_ID])
+        old = packets.local_lsas(PEER_ID, 17, cfg.LSA_INITIAL_SEQ + 2)
+        self.peer.receive(incoming(2, OSPFv3_DBDesc(
+            mtu=1500, dbdescr=7, ddseq=9)))
+        seq = self.peer.sequence
+        self.peer.receive(incoming(2, OSPFv3_DBDesc(
+            mtu=1500, dbdescr=0, ddseq=seq,
+            lsaheaders=[OSPFv3_LSA_Hdr(wire[:20]) for wire in old.values()])))
+        self.peer.receive(incoming(2, OSPFv3_DBDesc(
+            mtu=1500, dbdescr=0, ddseq=seq + 1)))
+        self.assertEqual(self.peer.stage, "synchronized")
+        self.assertEqual(self.peer.local_sequence, cfg.LSA_INITIAL_SEQ + 3)
+        self.assertEqual({int(OSPFv3_LSA_Hdr(wire[:20]).seq)
+                          for wire in self.peer.local.values()},
+                         {cfg.LSA_INITIAL_SEQ + 3})
 
     def test_no_remote_lsa_still_announces_prefix(self):
         self.negotiate(with_requests=False)
