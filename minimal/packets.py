@@ -54,8 +54,10 @@ def decode(frame):
     if not eth.haslayer(IPv6):
         raise ValueError("not IPv6")
     ip = eth[IPv6]
-    if ip.nh != 89 or ip.hlim != 1:
-        raise ValueError("not link-local OSPFv3")
+    if ip.nh != 89:
+        raise ValueError("not OSPFv3")
+    if ip.hlim < 1 or (ip.dst in (ALL_ROUTERS, "ff02::6") and ip.hlim != 1):
+        raise ValueError("invalid OSPFv3 Hop Limit")
     if not ipaddress.IPv6Address(ip.src).is_link_local:
         raise ValueError("OSPFv3 source must be link-local")
     if ip.dst not in (ALL_ROUTERS, "ff02::6", cfg.LINK_LOCAL):
