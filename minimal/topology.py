@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Two FRR routers, one OpenFlow switch, one SDN LAN and a remote host."""
+"""Original three-FRR-router triangle, SDN LAN, and a remote test host."""
 
 import os
 import shlex
@@ -83,32 +83,49 @@ def main():
                       rm=True)
         r1 = net.addDocker("r1", **docker)
         r2 = net.addDocker("r2", **docker)
+        r3 = net.addDocker("r3", **docker)
         s1 = net.addSwitch("s1", cls=OVSSwitch, protocols="OpenFlow13",
                            failMode="secure", dpid="0000000000000001")
         h1 = net.addHost("h1", ip=None)
         h2 = net.addHost("h2", ip=None)
 
-        net.addLink(r1, r2, intfName1="r1-eth0", intfName2="r2-eth0")
-        net.addLink(r2, h2, intfName1="r2-eth1")
-        net.addLink(r1, s1, intfName1="r1-eth1")  # s1-eth1, transit
+        # Preserve all three original FRR links, interfaces and subnets.
+        for left, right, left_port, right_port in (
+            (r1, r2, "r1-eth0", "r2-eth0"),
+            (r2, r3, "r2-eth1", "r3-eth0"),
+            (r3, r1, "r3-eth1", "r1-eth1"),
+        ):
+            net.addLink(left, right, intfName1=left_port, intfName2=right_port)
+        net.addLink(r1, s1, intfName1="r1-eth2")  # s1-eth1, transit
         net.addLink(s1, h1)                       # s1-eth2, LAN
+        net.addLink(r2, h2, intfName1="r2-eth2")  # additional test LAN
         net.start()
         if not net.waitConnected(timeout=15):
             raise RuntimeError("OpenFlow switch did not connect")
         configure_frr(r1, "1.1.1.1", {
-            "r1-eth0": "2001:db8:12::1/64", "r1-eth1": "2001:db8:10::1/64"},
-            ("r1-eth0", "r1-eth1"))
+            "r1-eth0": "2001:db8:12::1/64",
+            "r1-eth1": "2001:db8:31::1/64",
+            "r1-eth2": "2001:db8:10::1/64"},
+            ("r1-eth0", "r1-eth1", "r1-eth2"))
         configure_frr(r2, "2.2.2.2", {
-            "r2-eth0": "2001:db8:12::2/64", "r2-eth1": "2001:db8:2::1/64"},
-            ("r2-eth0",), ("r2-eth1",))
-        r1.cmd(f"ip link set dev r1-eth1 address {cfg.FRR_MAC}")
+            "r2-eth0": "2001:db8:12::2/64",
+            "r2-eth1": "2001:db8:23::2/64",
+            "r2-eth2": "2001:db8:2::1/64"},
+            ("r2-eth0", "r2-eth1"), ("r2-eth2",))
+        configure_frr(r3, "3.3.3.3", {
+            "r3-eth0": "2001:db8:23::3/64",
+            "r3-eth1": "2001:db8:31::3/64"},
+            ("r3-eth0", "r3-eth1"))
+        r1.cmd(f"ip link set dev r1-eth2 address {cfg.FRR_MAC}")
         configure_host(h1, cfg.HOST_MAC, f"{cfg.LAN_HOST}/64", cfg.LAN_GATEWAY)
         configure_host(h2, "02:00:00:00:02:00", "2001:db8:2::100/64",
                        "2001:db8:2::1")
         start_frr(r1)
         start_frr(r2)
+        start_frr(r3)
         info("\nVerify: r1 vtysh -c 'show ipv6 ospf6 neighbor'\n")
         info("        r2 vtysh -c 'show ipv6 route ospf6'\n")
+        info("        r3 vtysh -c 'show ipv6 route ospf6'\n")
         info("        h1 ping -6 -c 3 2001:db8:2::100\n")
         info("        h2 ping -6 -c 3 2001:db8:1::100\n")
         CLI(net)
