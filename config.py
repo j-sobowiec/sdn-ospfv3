@@ -1,27 +1,32 @@
-"""Fixed IPv6 addresses and switch ports for topology.py."""
+"""Two fixed SDN routers, indexed by OpenFlow datapath ID."""
 
-ROUTER_ID = "10.10.10.10"
 AREA_ID = "0.0.0.0"
 INSTANCE_ID = 0
-INTERFACE_ID = 1
 MTU = 1500
 OPTIONS = 0x13
 HELLO_INTERVAL = 10
 DEAD_INTERVAL = 40
 RETRANSMIT_INTERVAL = 5
 LS_REFRESH_INTERVAL = 1800
-
-SWITCH_DPID = 1
-TRANSIT_PORT = 1
-LAN_PORT = 2
-GATEWAY_MAC = "02:00:00:00:00:01"
-FRR_MAC = "02:00:00:00:10:01"
-HOST_MAC = "02:00:00:00:01:00"
-LINK_LOCAL = "fe80::10"
-TRANSIT_PREFIX = "2001:db8:10::/64"
-LAN_PREFIX = "2001:db8:1::/64"
-LAN_GATEWAY = "2001:db8:1::1"
-LAN_HOST = "2001:db8:1::100"
-HOST_ROUTE = "2001:db8:1::100/128"
-
 LSA_INITIAL_SEQ = 0x80000001
+
+# All values are specific to the physical ports in topology.py. There is
+# intentionally no discovery or generic routing configuration mechanism.
+SWITCHES = {
+    1: dict(
+        router_id="10.10.10.10", neighbor_id="1.1.1.1", interface_id=1,
+        transit_port=1, lan_port=2,
+        gateway_mac="02:00:00:00:00:01", frr_mac="02:00:00:00:10:01",
+        host_mac="02:00:00:00:01:00", link_local="fe80::10",
+        transit_prefix="2001:db8:10::/64", lan_prefix="2001:db8:1::/64",
+        lan_gateway="2001:db8:1::1", lan_host="2001:db8:1::100",
+    ),
+    2: dict(
+        router_id="10.10.10.11", neighbor_id="2.2.2.2", interface_id=2,
+        transit_port=1, lan_port=2,
+        gateway_mac="02:00:00:00:00:02", frr_mac="02:00:00:00:20:01",
+        host_mac="02:00:00:00:03:00", link_local="fe80::11",
+        transit_prefix="2001:db8:20::/64", lan_prefix="2001:db8:3::/64",
+        lan_gateway="2001:db8:3::1", lan_host="2001:db8:3::100",
+    ),
+}

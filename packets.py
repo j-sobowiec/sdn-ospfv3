@@ -48,7 +48,7 @@ def lsa_headers(raw):
     return result
 
 
-def decode(frame):
+def decode(frame, router):
     """Validate the envelope and non-LSU payload layout before dispatch."""
     eth = Ether(frame)
     if not eth.haslayer(IPv6):
@@ -60,7 +60,7 @@ def decode(frame):
         raise ValueError("invalid OSPFv3 Hop Limit")
     if not ipaddress.IPv6Address(ip.src).is_link_local:
         raise ValueError("OSPFv3 source must be link-local")
-    if ip.dst not in (ALL_ROUTERS, "ff02::6", cfg.LINK_LOCAL):
+    if ip.dst not in (ALL_ROUTERS, "ff02::6", router["link_local"]):
         raise ValueError("unexpected OSPFv3 destination")
     raw = bytes(ip.payload)
     if len(raw) < 16:
@@ -83,62 +83,62 @@ def decode(frame):
     return eth, ip, hdr, body
 
 
-def frame(packet_type, payload, dst=ALL_ROUTERS, mac=ALL_ROUTERS_MAC):
-    ip = IPv6(src=cfg.LINK_LOCAL, dst=dst, nh=89, hlim=1)
-    ospf = OSPFv3_Hdr(type=packet_type, src=cfg.ROUTER_ID,
+def frame(router, packet_type, payload, dst=ALL_ROUTERS, mac=ALL_ROUTERS_MAC):
+    ip = IPv6(src=router["link_local"], dst=dst, nh=89, hlim=1)
+    ospf = OSPFv3_Hdr(type=packet_type, src=router["router_id"],
                       area=cfg.AREA_ID, instance=cfg.INSTANCE_ID)
-    return bytes(Ether(src=cfg.GATEWAY_MAC, dst=mac) / ip / ospf / payload)
+    return bytes(Ether(src=router["gateway_mac"], dst=mac) / ip / ospf / payload)
 
 
-def hello(neighbors=()):
-    body = OSPFv3_Hello(intid=cfg.INTERFACE_ID, prio=1, options=cfg.OPTIONS,
+def hello(router, neighbors=()):
+    body = OSPFv3_Hello(intid=router["interface_id"], prio=1, options=cfg.OPTIONS,
                         hellointerval=cfg.HELLO_INTERVAL,
                         deadinterval=cfg.DEAD_INTERVAL, router="0.0.0.0",
                         backup="0.0.0.0", neighbors=list(neighbors))
-    return frame(1, body)
+    return frame(router, 1, body)
 
 
-def dbd(sequence, flags):
-    return frame(2, OSPFv3_DBDesc(mtu=cfg.MTU, options=cfg.OPTIONS,
-                                   dbdescr=flags, ddseq=sequence, lsaheaders=[]))
+def dbd(router, sequence, flags):
+    return frame(router, 2, OSPFv3_DBDesc(mtu=cfg.MTU, options=cfg.OPTIONS,
+                                          dbdescr=flags, ddseq=sequence, lsaheaders=[]))
 
 
-def lsr(requests, dst, mac):
+def lsr(router, requests, dst, mac):
     items = [OSPFv3_LSReq_Item(type=k[0], id=k[1], adrouter=k[2])
              for k in requests]
-    return frame(3, OSPFv3_LSReq(requests=items), dst, mac)
+    return frame(router, 3, OSPFv3_LSReq(requests=items), dst, mac)
 
 
-def lsu(lsas, dst, mac):
+def lsu(router, lsas, dst, mac):
     # Opaque LSA bodies are preserved; Scapy builds the OSPFv3/IPv6 checksums.
     payload = OSPFv3_LSUpd(lsacount=len(lsas)) / Raw(b"".join(lsas))
-    return frame(4, payload, dst, mac)
+    return frame(router, 4, payload, dst, mac)
 
 
-def lsack(headers, dst, mac):
+def lsack(router, headers, dst, mac):
     items = [OSPFv3_LSA_Hdr(bytes(h)[:20]) for h in headers]
-    return frame(5, OSPFv3_LSAck(lsaheaders=items), dst, mac)
+    return frame(router, 5, OSPFv3_LSAck(lsaheaders=items), dst, mac)
 
 
-def local_lsas(peer_id, peer_interface_id, sequence=cfg.LSA_INITIAL_SEQ):
+def local_lsas(router, peer_id, peer_interface_id, sequence=cfg.LSA_INITIAL_SEQ):
     """Point-to-point adjacency + transit link + stub SDN LAN."""
     prefix = OSPFv3_Prefix_Item(prefixlen=64, prefixoptions=0, metric=10,
-                                prefix=cfg.LAN_PREFIX)
+                                prefix=router["lan_prefix"])
     transit = OSPFv3_Prefix_Item(prefixlen=64, prefixoptions=0, metric=0,
-                                 prefix=cfg.TRANSIT_PREFIX)
-    router = OSPFv3_Router_LSA(
-        age=0, type=0x2001, id="0.0.0.0", adrouter=cfg.ROUTER_ID,
+                                 prefix=router["transit_prefix"])
+    router_lsa = OSPFv3_Router_LSA(
+        age=0, type=0x2001, id="0.0.0.0", adrouter=router["router_id"],
         seq=sequence, flags=0, options=cfg.OPTIONS,
         linklist=[OSPFv3_Link(type=1, reserved=0, metric=10,
-                              intid=cfg.INTERFACE_ID,
+                              intid=router["interface_id"],
                               neighintid=peer_interface_id, neighbor=peer_id)])
     link = OSPFv3_Link_LSA(
-        age=0, type=0x0008, id=str(ipaddress.IPv4Address(cfg.INTERFACE_ID)),
-        adrouter=cfg.ROUTER_ID, seq=sequence, prio=1, options=cfg.OPTIONS,
-        lladdr=cfg.LINK_LOCAL, prefixes=1, prefixlist=[transit])
+        age=0, type=0x0008, id=str(ipaddress.IPv4Address(router["interface_id"])),
+        adrouter=router["router_id"], seq=sequence, prio=1, options=cfg.OPTIONS,
+        lladdr=router["link_local"], prefixes=1, prefixlist=[transit])
     intra = OSPFv3_Intra_Area_Prefix_LSA(
-        age=0, type=0x2009, id="0.0.0.0", adrouter=cfg.ROUTER_ID,
+        age=0, type=0x2009, id="0.0.0.0", adrouter=router["router_id"],
         seq=sequence, prefixes=1, reflstype=0x2001,
-        reflsid="0.0.0.0", refadrouter=cfg.ROUTER_ID, prefixlist=[prefix])
-    lsas = (bytes(obj) for obj in (router, link, intra))
+        reflsid="0.0.0.0", refadrouter=router["router_id"], prefixlist=[prefix])
+    lsas = (bytes(obj) for obj in (router_lsa, link, intra))
     return {lsa_key(OSPFv3_LSA_Hdr(wire[:20])): wire for wire in lsas}

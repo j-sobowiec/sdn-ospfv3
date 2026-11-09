@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Three-FRR-router triangle, SDN LAN, and a remote test host."""
+"""Three-FRR-router triangle, two OVS routers and three test hosts."""
 
 import os
 import shlex
@@ -86,8 +86,11 @@ def main():
         r3 = net.addDocker("r3", **docker)
         s1 = net.addSwitch("s1", cls=OVSSwitch, protocols="OpenFlow13",
                            failMode="secure", dpid="0000000000000001")
+        s2 = net.addSwitch("s2", cls=OVSSwitch, protocols="OpenFlow13",
+                           failMode="secure", dpid="0000000000000002")
         h1 = net.addHost("h1", ip=None)
         h2 = net.addHost("h2", ip=None)
+        h3 = net.addHost("h3", ip=None)
 
         # FRRouting triangle: three point-to-point links.
         for left, right, left_port, right_port in (
@@ -99,6 +102,8 @@ def main():
         net.addLink(r1, s1, intfName1="r1-eth2")  # s1-eth1, transit
         net.addLink(s1, h1)                       # s1-eth2, LAN
         net.addLink(r2, h2, intfName1="r2-eth2")  # additional test LAN
+        net.addLink(r2, s2, intfName1="r2-eth3")  # s2-eth1, transit
+        net.addLink(s2, h3)                       # s2-eth2, LAN
         net.start()
         if not net.waitConnected(timeout=15):
             raise RuntimeError("OpenFlow switch did not connect")
@@ -110,24 +115,32 @@ def main():
         configure_frr(r2, "2.2.2.2", {
             "r2-eth0": "2001:db8:12::2/64",
             "r2-eth1": "2001:db8:23::2/64",
-            "r2-eth2": "2001:db8:2::1/64"},
-            ("r2-eth0", "r2-eth1"), ("r2-eth2",))
+            "r2-eth2": "2001:db8:2::1/64",
+            "r2-eth3": "2001:db8:20::1/64"},
+            ("r2-eth0", "r2-eth1", "r2-eth3"), ("r2-eth2",))
         configure_frr(r3, "3.3.3.3", {
             "r3-eth0": "2001:db8:23::3/64",
             "r3-eth1": "2001:db8:31::3/64"},
             ("r3-eth0", "r3-eth1"))
-        r1.cmd(f"ip link set dev r1-eth2 address {cfg.FRR_MAC}")
-        configure_host(h1, cfg.HOST_MAC, f"{cfg.LAN_HOST}/64", cfg.LAN_GATEWAY)
+        r1.cmd(f"ip link set dev r1-eth2 address {cfg.SWITCHES[1]['frr_mac']}")
+        r2.cmd(f"ip link set dev r2-eth3 address {cfg.SWITCHES[2]['frr_mac']}")
+        for host, dpid in ((h1, 1), (h3, 2)):
+            router = cfg.SWITCHES[dpid]
+            configure_host(host, router["host_mac"],
+                           f"{router['lan_host']}/64", router["lan_gateway"])
         configure_host(h2, "02:00:00:00:02:00", "2001:db8:2::100/64",
                        "2001:db8:2::1")
         start_frr(r1)
         start_frr(r2)
         start_frr(r3)
         info("\nVerify: r1 vtysh -c 'show ipv6 ospf6 neighbor'\n")
+        info("        r2 vtysh -c 'show ipv6 ospf6 neighbor'\n")
         info("        r2 vtysh -c 'show ipv6 route ospf6'\n")
         info("        r3 vtysh -c 'show ipv6 route ospf6'\n")
         info("        h1 ping -6 -c 3 2001:db8:2::100\n")
         info("        h2 ping -6 -c 3 2001:db8:1::100\n")
+        info("        h1 ping -6 -c 3 2001:db8:3::100\n")
+        info("        h3 ping -6 -c 3 2001:db8:1::100\n")
         CLI(net)
     finally:
         net.stop()

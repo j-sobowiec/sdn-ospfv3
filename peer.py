@@ -32,7 +32,8 @@ def lsa_is_newer(incoming, current):
 
 
 class Peer:
-    def __init__(self, send, logger, clock=time.monotonic):
+    def __init__(self, router, send, logger, clock=time.monotonic):
+        self.router = router
         self.send = send
         self.log = logger
         self.clock = clock
@@ -67,7 +68,7 @@ class Peer:
 
     def send_hello(self):
         neighbors = [self.router_id] if self.router_id else []
-        self.transmit(packets.hello(neighbors), "Hello")
+        self.transmit(packets.hello(self.router, neighbors), "Hello")
 
     def tick(self):
         now = self.clock()
@@ -91,15 +92,15 @@ class Peer:
                 and now - self.local_refreshed_at >= cfg.LS_REFRESH_INTERVAL):
             self.local_sequence += 1
             self.local = packets.local_lsas(
-                self.router_id, self.interface_id, self.local_sequence)
+                self.router, self.router_id, self.interface_id, self.local_sequence)
             self.send_local_update()
             self.local_refreshed_at = now
             self.log.info("[OSPF] refreshed local LSAs")
 
     def receive(self, data):
         try:
-            eth, ip, hdr, body = packets.decode(data)
-            if hdr.src == cfg.ROUTER_ID:
+            eth, ip, hdr, body = packets.decode(data, self.router)
+            if hdr.src == self.router["router_id"]:
                 return
             if hdr.type == 1:
                 self.on_hello(eth, ip, hdr, body)
@@ -119,6 +120,8 @@ class Peer:
 
     def on_hello(self, eth, ip, hdr, body):
         hello = hdr.payload
+        if hdr.src != self.router["neighbor_id"]:
+            raise ValueError("unexpected OSPFv3 neighbor Router ID")
         if (hello.hellointerval != cfg.HELLO_INTERVAL
                 or hello.deadinterval != cfg.DEAD_INTERVAL
                 or int(hello.intid) == 0):
@@ -138,7 +141,7 @@ class Peer:
         if discovered:
             self.stage = "init"
             self.send_hello()
-        if cfg.ROUTER_ID not in hello.neighbors:
+        if self.router["router_id"] not in hello.neighbors:
             if self.stage not in ("down", "init"):
                 # RFC 2328 10.3/10.5: 1-WayReceived takes every state from
                 # 2-Way upwards back to Init, while preserving the neighbor.
@@ -148,16 +151,16 @@ class Peer:
                 self.local.clear()
             return
         if self.stage == "init":
-            if int(ipaddress.IPv4Address(cfg.ROUTER_ID)) <= int(
+            if int(ipaddress.IPv4Address(self.router["router_id"])) <= int(
                     ipaddress.IPv4Address(self.router_id)):
                 raise ValueError("demo requires controller to be DBD master")
             self.stage = "two-way"
             self.local = packets.local_lsas(
-                self.router_id, self.interface_id, self.local_sequence)
+                self.router, self.router_id, self.interface_id, self.local_sequence)
             self.log.info("[OSPF] neighbor %s: Init -> 2-Way", self.router_id)
 
     def send_dbd(self, flags):
-        data = packets.dbd(self.sequence, flags)
+        data = packets.dbd(self.router, self.sequence, flags)
         if self.transmit(data, "DBD"):
             self.last_dbd = data
             self.dbd_sent_at = self.clock()
@@ -168,7 +171,7 @@ class Peer:
         for offset in range(12, len(body), 20):
             header = OSPFv3_LSA_Hdr(body[offset:offset + 20])
             key = packets.lsa_key(header)
-            if key[2] == cfg.ROUTER_ID:
+            if key[2] == self.router["router_id"]:
                 seq = int(header.seq)
                 if newest_self is None or lsa_seq_rank(seq) > lsa_seq_rank(newest_self):
                     newest_self = seq
@@ -180,7 +183,7 @@ class Peer:
                 raise ValueError("local LSA sequence number exhausted")
             self.local_sequence = newest_self + 1
             self.local = packets.local_lsas(
-                self.router_id, self.interface_id, self.local_sequence)
+                self.router, self.router_id, self.interface_id, self.local_sequence)
 
     def on_dbd(self, desc, body):
         if self.stage not in ("two-way", "exstart", "exchange", "loading",
@@ -243,7 +246,7 @@ class Peer:
     def send_requests(self):
         if not self.requests or not self.address:
             return
-        data = packets.lsr(self.requests, self.address, self.mac)
+        data = packets.lsr(self.router, self.requests, self.address, self.mac)
         if len(data) > cfg.MTU + 14:
             raise ValueError("demo LSR exceeds link MTU")
         if self.transmit(data, "LSR"):
@@ -263,7 +266,8 @@ class Peer:
             return
         requested = [self.local[key] for key in keys]
         if requested:
-            self.transmit(packets.lsu(requested, self.address, self.mac), "LSU reply")
+            self.transmit(packets.lsu(self.router, requested, self.address,
+                                      self.mac), "LSU reply")
 
     def restart_exchange(self, reason):
         """Re-negotiate a broken adjacency without forgetting the neighbor."""
@@ -289,12 +293,12 @@ class Peer:
         self.log.info("[OSPF][LSU RX] lsas=%d", len(received))
         if not received:
             return
-        self.transmit(packets.lsack([wire[:20] for _, wire in received],
-                                     self.address, self.mac), "LSAck")
+        self.transmit(packets.lsack(self.router, [wire[:20] for _, wire in received],
+                                    self.address, self.mac), "LSAck")
         newest_self = None
         for hdr, _ in received:
             key = packets.lsa_key(hdr)
-            if key[2] == cfg.ROUTER_ID and key in self.local:
+            if key[2] == self.router["router_id"] and key in self.local:
                 current = OSPFv3_LSA_Hdr(self.local[key][:20])
                 if lsa_is_newer(hdr, current):
                     seq = int(hdr.seq)
@@ -317,7 +321,7 @@ class Peer:
                     lsa_seq_rank(newest_self)) ^ 0x80000000
                 self.local_sequence += 1
                 self.local = packets.local_lsas(
-                    self.router_id, self.interface_id, self.local_sequence)
+                    self.router, self.router_id, self.interface_id, self.local_sequence)
                 if self.stage == "synchronized":
                     self.send_local_update()
                     self.local_refreshed_at = self.clock()
@@ -342,7 +346,8 @@ class Peer:
         if not keys:
             return
         lsas = [self.local[key] for key in keys]
-        if self.transmit(packets.lsu(lsas, self.address, self.mac), "local LSU"):
+        if self.transmit(packets.lsu(self.router, lsas, self.address,
+                                     self.mac), "local LSU"):
             for key in keys:
                 self.pending_acks[key] = OSPFv3_LSA_Hdr(self.local[key][:20])
             self.local_sent_at = self.clock()
