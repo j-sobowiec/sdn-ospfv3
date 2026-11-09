@@ -62,6 +62,22 @@ Nie uruchamiaj drugiej instancji Ryu ani Containernet. Poczekaj na
 konwergencję OSPFv3. Wszystkie poniższe polecenia uruchom w interaktywnej
 konsoli `containernet>` (prefiks `sh` wykonuje polecenie na hoście Ubuntu).
 
+### Logi kontrolera
+
+Domyślny poziom `INFO` pokazuje podłączenie/odłączenie S1 i S2,
+odkrycie sąsiada OSPFv3, przejście do `2-Way`, początek i koniec
+wymiany DBD, liczbę żądanych LSA, otrzymanie żądanych LSA,
+rozgłoszenie lokalnych LSA, ich potwierdzenie oraz synchronizację LSDB.
+Każdy etap jest logowany przy zmianie stanu, a nie dla każdego pakietu.
+Kontroler nie loguje pojedynczych pakietów Hello, DBD, LSR, LSU, LSAck
+ani odpowiedzi NDP. Do analizy pakietów służy tcpdump lub Wireshark.
+Pakiety DBD/LSU otrzymane przed osiągnięciem `2-Way` są ignorowane;
+błędy walidacji, zerwania sąsiedztwa i ponowna negocjacja nadal
+generują ostrzeżenia.
+Każdy komunikat dotyczący przełącznika zawiera oznaczenie `[S1]` lub `[S2]`.
+Komunikat `LSDB synchronized` nie oznacza jeszcze potwierdzonego stanu
+`Full`: weryfikuj go na routerze FRR przez `show ipv6 ospf6 neighbor`.
+
 ## Walidacja integracyjna — sześć osobnych testów
 
 **TEST 1 — jeden kontroler i dwa DPID:**
@@ -75,7 +91,8 @@ sh ovs-ofctl -O OpenFlow13 show s2
 
 Obie listy kontrolerów powinny wskazywać `tcp:127.0.0.1:6653`, a odpowiedzi
 OpenFlow dwa różne `dpid:0000000000000001` i `dpid:0000000000000002`.
-W logu jednego Ryu powinny pojawić się instalacje reguł dla DPID 1 i 2.
+W logu jednego Ryu powinny pojawić się instalacje reguł dla S1 (DPID 1)
+i S2 (DPID 2).
 
 **TEST 2 — dwa sąsiedztwa `Full`:**
 

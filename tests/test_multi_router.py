@@ -3,6 +3,7 @@
 import ipaddress
 import logging
 import unittest
+from unittest.mock import Mock
 
 from scapy.contrib.ospf import (OSPFv3_Intra_Area_Prefix_LSA,
                                 OSPFv3_Link_LSA, OSPFv3_Router_LSA)
@@ -69,6 +70,57 @@ class MultiRouterProtocolTests(unittest.TestCase):
         self.assertEqual(peers[1].stage, "down")
         self.assertEqual(peers[2].stage, "two-way")
         self.assertEqual(peers[2].router_id, "2.2.2.2")
+
+    def test_periodic_hello_is_silent_but_adjacency_is_info(self):
+        router = cfg.SWITCHES[1]
+        peer = Peer(router, lambda _data: True,
+                    logging.getLogger("test-quiet-hello"), label="S1")
+        frr = dict(router, router_id=router["neighbor_id"],
+                   gateway_mac=router["frr_mac"], link_local="fe80::1")
+        with self.assertLogs("test-quiet-hello", level="DEBUG") as messages:
+            peer.tick()  # periodic Hello TX
+            peer.receive(packets.hello(frr, [router["router_id"]]))
+        info = [message for message in messages.output
+                if message.startswith("INFO:")]
+        self.assertEqual(len(info), 2)
+        self.assertEqual(len(messages.output), 2)  # no packet-level DEBUG
+        self.assertIn("[OSPF][S1] Hello: discovered neighbor 1.1.1.1", info[0])
+        self.assertIn("[OSPF][S1] neighbor 1.1.1.1: Init -> 2-Way", info[1])
+
+    def test_early_dbd_is_ignored_without_logging(self):
+        router = cfg.SWITCHES[2]
+        logger = Mock()
+        peer = Peer(router, lambda _data: True, logger, label="S2")
+        frr = dict(router, router_id=router["neighbor_id"],
+                   gateway_mac=router["frr_mac"], link_local="fe80::2")
+        peer.receive(packets.dbd(frr, 123, 7))
+        self.assertEqual(peer.stage, "down")
+        logger.debug.assert_not_called()
+        logger.info.assert_not_called()
+        logger.warning.assert_not_called()
+
+    def test_lsa_advertisement_and_ack_are_logged_once(self):
+        router = cfg.SWITCHES[2]
+        peer = Peer(router, lambda _data: True,
+                    logging.getLogger("test-ospf-milestones"), label="S2")
+        peer.router_id = router["neighbor_id"]
+        peer.interface_id = 123
+        peer.address = "fe80::2"
+        peer.mac = router["frr_mac"]
+        peer.local = packets.local_lsas(router, peer.router_id, peer.interface_id)
+        peer.stage = "loading"
+        headers = b"".join(lsa[:20] for lsa in peer.local.values())
+
+        with self.assertLogs("test-ospf-milestones", level="INFO") as messages:
+            peer.finish_loading()
+            peer.finish_loading()  # not a new state transition
+            peer.on_lsack(headers)
+            peer.on_lsack(headers)  # repeated ACK should not log INFO
+
+        self.assertEqual(len(messages.output), 3)
+        self.assertIn("advertised 3 local LSAs", messages.output[0])
+        self.assertIn("LSDB synchronized", messages.output[1])
+        self.assertIn("local LSAs acknowledged", messages.output[2])
 
 
 if __name__ == "__main__":

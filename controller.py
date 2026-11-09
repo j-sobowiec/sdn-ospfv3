@@ -57,10 +57,11 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
             self.logger.error("[OPENFLOW] unexpected DPID %d", dp.id)
             return
         self.datapaths[dp.id] = dp
-        if dp.id not in self.peers:
+        reconnected = dp.id in self.peers
+        if not reconnected:
             self.peers[dp.id] = Peer(
                 router, lambda data, dpid=dp.id: self.send_ospf(dpid, data),
-                self.logger)
+                self.logger, label=f"S{dp.id}")
         else:
             self.peers[dp.id].reset()
         p, ofp = dp.ofproto_parser, dp.ofproto
@@ -97,14 +98,15 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
             in_port=router["transit_port"], eth_type=ether_types.ETH_TYPE_IPV6,
             eth_dst=router["gateway_mac"], ipv6_dst=router["lan_host"]),
             route_actions(router["host_mac"], router["lan_port"]))
-        self.logger.info("[OPENFLOW] DPID %d: two IPv6 routes, OSPF/NDP punts", dp.id)
+        self.logger.info("[OPENFLOW][S%d] %s; 2 IPv6 routes, OSPF/NDP punts",
+                         dp.id, "reconnected" if reconnected else "connected")
 
     @set_ev_cls(ofp_event.EventOFPStateChange, DEAD_DISPATCHER)
     def switch_disconnected(self, event):
         dp = event.datapath
         if self.datapaths.get(dp.id) is dp:
             del self.datapaths[dp.id]
-            self.logger.warning("[OPENFLOW] DPID %d disconnected", dp.id)
+            self.logger.warning("[OPENFLOW][S%d] disconnected", dp.id)
 
     def neighbor_advertisement(self, router, mac, address, target):
         pkt = packet.Packet()
@@ -162,8 +164,6 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
             if lan or transit:
                 self.send_packet(dp.id, self.neighbor_advertisement(
                     router, eth.src, ip.src, target), port)
-                self.logger.info("[NDP] DPID %d advertised %s on port %d",
-                                 dp.id, target, port)
         elif (icmp.type_ == 128 and port == router["lan_port"]
               and eth.src == router["host_mac"] and ip.src == router["lan_host"]
               and ip.dst == router["lan_gateway"]
