@@ -1,6 +1,8 @@
-# Testy funkcjonalne i integracyjne
+# Archiwalna procedura testowania — topologia z jednym OVS
 
-Uruchom Ryu i Containernet według `README.md`.
+Ten dokument opisuje poprzedni scenariusz testowy. Nie jest aktualną procedurą walidacji rozwijanej topologii.
+
+Uruchom Ryu i Containernet według [README projektu](../../README.md).
 Poniższe polecenia wykonaj w CLI `containernet>`:
 
 ```text
@@ -41,22 +43,3 @@ i retransmisje lokalnych LSU.
 
 Nie uznawaj tych prób za zaliczone bez zarejestrowanych wyników.
 
-## Automatyczne
-
-Projekt ma już [testy offline i 11 scenariuszy integracyjnych](../validation/README.md).
-Z katalogu głównego repozytorium:
-
-```bash
-make setup-tests              # jednorazowo
-make test                     # offline, bez uprawnień administratora
-make preflight                # bez zmian sieciowych
-make integration CONFIRM=YES  # wyłącznie na dedykowanym Ubuntu
-```
-
-Testy integracyjne samodzielnie uruchamiają i zatrzymują Ryu oraz Containernet;
-**nie** uruchamiaj ich równolegle z topologią z sekcji powyżej.
-Dowody trafiają do `validation/results/`, który jest wykluczony z Git.
-Wyniki należy archiwizować wraz z commitem i stanem drzewa Git;
-bez raportu z bieżącej wersji nie są one potwierdzeniem działania `main`.
-Kryteria `INT-01`–`INT-11` i format raportów opisuje
-[validation/README.md](../validation/README.md).

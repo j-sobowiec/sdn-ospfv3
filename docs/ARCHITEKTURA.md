@@ -38,4 +38,4 @@ wielu obszarów, DR/BDR, ECMP ani dowolnego wyznaczania tras przez Ryu.
 Wewnętrzny stan `synchronized` w `peer.py` nie jest równoważny
 potwierdzonemu `Full` po stronie FRRouting. Sąsiedztwo, LSDB i trasy
 należy sprawdzać niezależnie przez `vtysh` i tablice routingu systemu;
-procedura znajduje się w [TESTY.md](TESTY.md).
+dotychczasowe scenariusze zachowano w [archiwum](../archive/legacy-integration/README.md).
