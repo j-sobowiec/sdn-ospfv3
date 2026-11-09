@@ -101,9 +101,9 @@ def main():
             net.addLink(left, right, intfName1=left_port, intfName2=right_port)
         net.addLink(r1, s1, intfName1="r1-eth2")  # s1-eth1, transit
         net.addLink(s1, h1)                       # s1-eth2, LAN
-        net.addLink(r2, h2, intfName1="r2-eth2")  # additional test LAN
-        net.addLink(r2, s2, intfName1="r2-eth3")  # s2-eth1, transit
-        net.addLink(s2, h3)                       # s2-eth2, LAN
+        net.addLink(r2, s2, intfName1="r2-eth2")  # s2-eth1, transit
+        net.addLink(s2, h2)                       # s2-eth2, LAN
+        net.addLink(r3, h3, intfName1="r3-eth2")  # R3's passive LAN
         net.start()
         if not net.waitConnected(timeout=15):
             raise RuntimeError("OpenFlow switch did not connect")
@@ -115,21 +115,21 @@ def main():
         configure_frr(r2, "2.2.2.2", {
             "r2-eth0": "2001:db8:12::2/64",
             "r2-eth1": "2001:db8:23::2/64",
-            "r2-eth2": "2001:db8:2::1/64",
-            "r2-eth3": "2001:db8:20::1/64"},
-            ("r2-eth0", "r2-eth1", "r2-eth3"), ("r2-eth2",))
+            "r2-eth2": "2001:db8:20::1/64"},
+            ("r2-eth0", "r2-eth1", "r2-eth2"))
         configure_frr(r3, "3.3.3.3", {
             "r3-eth0": "2001:db8:23::3/64",
-            "r3-eth1": "2001:db8:31::3/64"},
-            ("r3-eth0", "r3-eth1"))
+            "r3-eth1": "2001:db8:31::3/64",
+            "r3-eth2": "2001:db8:3::1/64"},
+            ("r3-eth0", "r3-eth1"), ("r3-eth2",))
         r1.cmd(f"ip link set dev r1-eth2 address {cfg.SWITCHES[1]['frr_mac']}")
-        r2.cmd(f"ip link set dev r2-eth3 address {cfg.SWITCHES[2]['frr_mac']}")
-        for host, dpid in ((h1, 1), (h3, 2)):
+        r2.cmd(f"ip link set dev r2-eth2 address {cfg.SWITCHES[2]['frr_mac']}")
+        for host, dpid in ((h1, 1), (h2, 2)):
             router = cfg.SWITCHES[dpid]
             configure_host(host, router["host_mac"],
                            f"{router['lan_host']}/64", router["lan_gateway"])
-        configure_host(h2, "02:00:00:00:02:00", "2001:db8:2::100/64",
-                       "2001:db8:2::1")
+        configure_host(h3, "02:00:00:00:03:00", "2001:db8:3::100/64",
+                       "2001:db8:3::1")
         start_frr(r1)
         start_frr(r2)
         start_frr(r3)
@@ -137,10 +137,10 @@ def main():
         info("        r2 vtysh -c 'show ipv6 ospf6 neighbor'\n")
         info("        r2 vtysh -c 'show ipv6 route ospf6'\n")
         info("        r3 vtysh -c 'show ipv6 route ospf6'\n")
-        info("        h1 ping -6 -c 3 2001:db8:2::100\n")
-        info("        h2 ping -6 -c 3 2001:db8:1::100\n")
-        info("        h1 ping -6 -c 3 2001:db8:3::100\n")
-        info("        h3 ping -6 -c 3 2001:db8:1::100\n")
+        info("        h1 ping -6 -c 3 2001:db8:2::100  # H1 -> H2 (both SDN)\n")
+        info("        h2 ping -6 -c 3 2001:db8:1::100  # H2 -> H1\n")
+        info("        h1 ping -6 -c 3 2001:db8:3::100  # H1 -> H3 (R3 LAN)\n")
+        info("        h3 ping -6 -c 3 2001:db8:2::100  # H3 -> H2\n")
         CLI(net)
     finally:
         net.stop()

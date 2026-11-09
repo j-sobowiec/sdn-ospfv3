@@ -15,6 +15,9 @@ from peer import Peer
 class MultiRouterProtocolTests(unittest.TestCase):
     def test_distinct_router_configuration(self):
         self.assertEqual(set(cfg.SWITCHES), {1, 2})
+        self.assertEqual(cfg.SWITCHES[2]["router_id"], "11.11.11.11")
+        self.assertEqual(cfg.SWITCHES[2]["lan_prefix"], "2001:db8:2::/64")
+        self.assertEqual(cfg.SWITCHES[2]["lan_host"], "2001:db8:2::100")
         for field in ("router_id", "neighbor_id", "interface_id", "gateway_mac", "frr_mac",
                       "host_mac", "link_local", "lan_prefix", "transit_prefix",
                       "lan_gateway", "lan_host"):

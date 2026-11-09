@@ -22,11 +22,11 @@ SWITCHES = {
         lan_gateway="2001:db8:1::1", lan_host="2001:db8:1::100",
     ),
     2: dict(
-        router_id="10.10.10.11", neighbor_id="2.2.2.2", interface_id=2,
+        router_id="11.11.11.11", neighbor_id="2.2.2.2", interface_id=2,
         transit_port=1, lan_port=2,
         gateway_mac="02:00:00:00:00:02", frr_mac="02:00:00:00:20:01",
-        host_mac="02:00:00:00:03:00", link_local="fe80::11",
-        transit_prefix="2001:db8:20::/64", lan_prefix="2001:db8:3::/64",
-        lan_gateway="2001:db8:3::1", lan_host="2001:db8:3::100",
+        host_mac="02:00:00:00:02:00", link_local="fe80::11",
+        transit_prefix="2001:db8:20::/64", lan_prefix="2001:db8:2::/64",
+        lan_gateway="2001:db8:2::1", lan_host="2001:db8:2::100",
     ),
 }
