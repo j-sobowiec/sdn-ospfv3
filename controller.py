@@ -114,18 +114,15 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
     def packet_in(self, event):
         msg = event.msg
         port = msg.match.get("in_port")
-        if port == cfg.TRANSIT_PORT:
-            pkt = packet.Packet(msg.data)
-            ip = pkt.get_protocol(ipv6.ipv6)
-            if ip is not None and ip.nxt == 89:
-                self.peer.receive(msg.data)
-                return
-        elif port != cfg.LAN_PORT:
+        if port not in (cfg.TRANSIT_PORT, cfg.LAN_PORT):
             return
 
         pkt = packet.Packet(msg.data)
-        eth = pkt.get_protocol(ethernet.ethernet)
         ip = pkt.get_protocol(ipv6.ipv6)
+        if port == cfg.TRANSIT_PORT and ip is not None and ip.nxt == 89:
+            self.peer.receive(msg.data)
+            return
+        eth = pkt.get_protocol(ethernet.ethernet)
         icmp = pkt.get_protocol(icmpv6.icmpv6)
         if eth is None or ip is None or icmp is None or ip.nxt != 58:
             return

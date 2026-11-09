@@ -49,7 +49,7 @@ def lsa_headers(raw):
 
 
 def decode(frame):
-    """Validate IPv6/OSPF envelope and payload layout before dispatch."""
+    """Validate the envelope and non-LSU payload layout before dispatch."""
     eth = Ether(frame)
     if not eth.haslayer(IPv6):
         raise ValueError("not IPv6")
@@ -80,8 +80,6 @@ def decode(frame):
         base, item = sizes[hdr.type]
         if len(body) < base or (len(body) - base) % item:
             raise ValueError("invalid OSPFv3 message length")
-    if hdr.type == 4:
-        lsa_headers(body)
     return eth, ip, hdr, body
 
 
@@ -142,5 +140,5 @@ def local_lsas(peer_id, peer_interface_id, sequence=cfg.LSA_INITIAL_SEQ):
         age=0, type=0x2009, id="0.0.0.0", adrouter=cfg.ROUTER_ID,
         seq=sequence, prefixes=1, reflstype=0x2001,
         reflsid="0.0.0.0", refadrouter=cfg.ROUTER_ID, prefixlist=[prefix])
-    return {lsa_key(OSPFv3_LSA_Hdr(bytes(obj)[:20])): bytes(obj)
-            for obj in (router, link, intra)}
+    lsas = (bytes(obj) for obj in (router, link, intra))
+    return {lsa_key(OSPFv3_LSA_Hdr(wire[:20])): wire for wire in lsas}

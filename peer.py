@@ -11,10 +11,15 @@ import config as cfg
 import packets
 
 
+def lsa_seq_rank(sequence):
+    """Map encoded LSA sequence numbers to signed-order ranks."""
+    return int(sequence) ^ 0x80000000
+
+
 def lsa_is_newer(incoming, current):
     """Compare LSA instances according to RFC 2328 section 13.1."""
-    incoming_seq = int(incoming.seq) ^ 0x80000000
-    current_seq = int(current.seq) ^ 0x80000000
+    incoming_seq = lsa_seq_rank(incoming.seq)
+    current_seq = lsa_seq_rank(current.seq)
     if incoming_seq != current_seq:
         return incoming_seq > current_seq
     if int(incoming.chksum) != int(current.chksum):
@@ -165,12 +170,12 @@ class Peer:
             key = packets.lsa_key(header)
             if key[2] == cfg.ROUTER_ID:
                 seq = int(header.seq)
-                if newest_self is None or (seq ^ 0x80000000) > (newest_self ^ 0x80000000):
+                if newest_self is None or lsa_seq_rank(seq) > lsa_seq_rank(newest_self):
                     newest_self = seq
             else:
                 self.requests[key] = header
         if (newest_self is not None and
-                (newest_self ^ 0x80000000) >= (self.local_sequence ^ 0x80000000)):
+                lsa_seq_rank(newest_self) >= lsa_seq_rank(self.local_sequence)):
             if newest_self == 0x7fffffff:
                 raise ValueError("local LSA sequence number exhausted")
             self.local_sequence = newest_self + 1
@@ -294,15 +299,13 @@ class Peer:
                 if lsa_is_newer(hdr, current):
                     seq = int(hdr.seq)
                     if (newest_self is None
-                            or (seq ^ 0x80000000) > (newest_self ^ 0x80000000)):
+                            or lsa_seq_rank(seq) > lsa_seq_rank(newest_self)):
                         newest_self = seq
             expected = self.requests.get(key)
             if expected is None:
                 continue
-            received_seq = struct.unpack("!i", struct.pack("!I", int(hdr.seq)))[0]
-            expected_seq = struct.unpack("!i", struct.pack("!I", int(expected.seq)))[0]
-            if (received_seq > expected_seq or
-                    (received_seq == expected_seq
+            if (lsa_seq_rank(hdr.seq) > lsa_seq_rank(expected.seq) or
+                    (int(hdr.seq) == int(expected.seq)
                      and int(hdr.chksum) >= int(expected.chksum))):
                 del self.requests[key]
         if newest_self is not None:
@@ -310,8 +313,8 @@ class Peer:
                 self.log.error("[OSPF] cannot fight back MaxSequenceNumber LSA")
             else:
                 self.local_sequence = max(
-                    self.local_sequence ^ 0x80000000,
-                    newest_self ^ 0x80000000) ^ 0x80000000
+                    lsa_seq_rank(self.local_sequence),
+                    lsa_seq_rank(newest_self)) ^ 0x80000000
                 self.local_sequence += 1
                 self.local = packets.local_lsas(
                     self.router_id, self.interface_id, self.local_sequence)
