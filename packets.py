@@ -87,7 +87,10 @@ def frame(router, packet_type, payload, dst=ALL_ROUTERS, mac=ALL_ROUTERS_MAC):
     ip = IPv6(src=router["link_local"], dst=dst, nh=89, hlim=1)
     ospf = OSPFv3_Hdr(type=packet_type, src=router["router_id"],
                       area=cfg.AREA_ID, instance=cfg.INSTANCE_ID)
-    return bytes(Ether(src=router["gateway_mac"], dst=mac) / ip / ospf / payload)
+    return bytes(
+        Ether(src=router["transit_mac"], dst=mac)
+        / ip / ospf / payload
+    )
 
 
 def hello(router, neighbors=()):

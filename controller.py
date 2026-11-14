@@ -83,23 +83,40 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
             ipv6_dst=(router["lan_prefix"].split("/")[0],
                       "ffff:ffff:ffff:ffff::")), punt)
 
-        def route_actions(mac, port):
-            return [p.OFPActionDecNwTtl(),
-                    p.OFPActionSetField(eth_src=router["gateway_mac"]),
-                    p.OFPActionSetField(eth_dst=mac),
-                    p.OFPActionOutput(port)]
+        
+    def route_actions(src_mac, dst_mac, port):
+        return [
+            p.OFPActionDecNwTtl(),
+            p.OFPActionSetField(eth_src=src_mac),
+            p.OFPActionSetField(eth_dst=dst_mac),
+            p.OFPActionOutput(port)
+        ]
 
-        self.flow(dp, 100, dict(
-            in_port=router["lan_port"], eth_type=ether_types.ETH_TYPE_IPV6,
-            eth_dst=router["gateway_mac"], ipv6_src=router["lan_host"],
-            ipv6_dst=("2000::", "e000::")),
-            route_actions(router["frr_mac"], router["transit_port"]))
-        self.flow(dp, 100, dict(
-            in_port=router["transit_port"], eth_type=ether_types.ETH_TYPE_IPV6,
-            eth_dst=router["gateway_mac"], ipv6_dst=router["lan_host"]),
-            route_actions(router["host_mac"], router["lan_port"]))
-        self.logger.info("[OPENFLOW][S%d] %s; 2 IPv6 routes, OSPF/NDP punts",
-                         dp.id, "reconnected" if reconnected else "connected")
+    # LAN -> FRR (port 2 -> port 1)
+    self.flow(dp, 100, dict(
+        in_port=router["lan_port"],
+        eth_type=ether_types.ETH_TYPE_IPV6,
+        eth_dst=router["lan_mac"],
+        ipv6_src=router["lan_host"],
+        ipv6_dst=("2000::", "e000::"),
+    ), route_actions(
+        router["transit_mac"],
+        router["frr_mac"],
+        router["transit_port"],
+    ))
+
+    # FRR -> LAN (port 1 -> port 2)
+    self.flow(dp, 100, dict(
+        in_port=router["transit_port"],
+        eth_type=ether_types.ETH_TYPE_IPV6,
+        eth_dst=router["transit_mac"],
+        ipv6_dst=router["lan_host"],
+    ), route_actions(
+        router["lan_mac"],
+        router["host_mac"],
+        router["lan_port"],
+    ))
+
 
     @set_ev_cls(ofp_event.EventOFPStateChange, DEAD_DISPATCHER)
     def switch_disconnected(self, event):
@@ -108,28 +125,45 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
             del self.datapaths[dp.id]
             self.logger.warning("[OPENFLOW][S%d] disconnected", dp.id)
 
-    def neighbor_advertisement(self, router, mac, address, target):
+    
+    def neighbor_advertisement(self, local_mac, mac, address, target):
         pkt = packet.Packet()
+
         pkt.add_protocol(ethernet.ethernet(
-            dst=mac, src=router["gateway_mac"], ethertype=ether_types.ETH_TYPE_IPV6))
-        pkt.add_protocol(ipv6.ipv6(src=target, dst=address, nxt=58, hop_limit=255))
+            dst=mac,
+            src=local_mac,
+            ethertype=ether_types.ETH_TYPE_IPV6
+        ))
+
+        pkt.add_protocol(ipv6.ipv6(
+            src=target,
+            dst=address,
+            nxt=58,
+            hop_limit=255
+        ))
+
         pkt.add_protocol(icmpv6.icmpv6(
-            type_=icmpv6.ND_NEIGHBOR_ADVERT, code=0, csum=0,
+            type_=icmpv6.ND_NEIGHBOR_ADVERT,
+            code=0,
+            csum=0,
             data=icmpv6.nd_neighbor(
-                res=0x7, dst=target,
-                option=icmpv6.nd_option_tla(hw_src=router["gateway_mac"]))))
+                res=0x7,
+                dst=target,
+                option=icmpv6.nd_option_tla(
+                    hw_src=local_mac
+                )
+            )
+        ))
+
         pkt.serialize()
         return bytes(pkt.data)
 
+
     def echo_reply(self, router, mac, address, echo):
         pkt = packet.Packet()
-        pkt.add_protocol(ethernet.ethernet(
-            dst=mac, src=router["gateway_mac"], ethertype=ether_types.ETH_TYPE_IPV6))
-        pkt.add_protocol(ipv6.ipv6(src=router["lan_gateway"], dst=address,
-                                   nxt=58, hop_limit=64))
-        pkt.add_protocol(icmpv6.icmpv6(
-            type_=129, code=0, csum=0,
-            data=icmpv6.echo(id_=echo.id, seq=echo.seq, data=echo.data)))
+        pkt.add_protocol(ethernet.ethernet(dst=mac, src=router["lan_mac"], ethertype=ether_types.ETH_TYPE_IPV6))
+        pkt.add_protocol(ipv6.ipv6(src=router["lan_gateway"], dst=address, nxt=58, hop_limit=64))
+        pkt.add_protocol(icmpv6.icmpv6(type_=129, code=0, csum=0, data=icmpv6.echo(id_=echo.id, seq=echo.seq, data=echo.data)))
         pkt.serialize()
         return bytes(pkt.data)
 
@@ -161,9 +195,24 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
                    and target == router["lan_gateway"])
             transit = (port == router["transit_port"] and eth.src == router["frr_mac"]
                        and target == router["link_local"])
-            if lan or transit:
-                self.send_packet(dp.id, self.neighbor_advertisement(
-                    router, eth.src, ip.src, target), port)
+            
+        if lan or transit:
+            local_mac = (
+                router["lan_mac"] if lan
+                else router["transit_mac"]
+            )
+
+            self.send_packet(
+                dp.id,
+                self.neighbor_advertisement(
+                    local_mac,
+                    eth.src,
+                    ip.src,
+                    target
+                ),
+                port
+            )
+
         elif (icmp.type_ == 128 and port == router["lan_port"]
               and eth.src == router["host_mac"] and ip.src == router["lan_host"]
               and ip.dst == router["lan_gateway"]
