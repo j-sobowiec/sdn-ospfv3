@@ -82,45 +82,50 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
             in_port=router["lan_port"], eth_type=0x86dd,
             ipv6_dst=(router["lan_prefix"].split("/")[0],
                       "ffff:ffff:ffff:ffff::")), punt)
-
         
-    def route_actions(src_mac, dst_mac, port):
-        return [
-            p.OFPActionDecNwTtl(),
-            p.OFPActionSetField(eth_src=src_mac),
-            p.OFPActionSetField(eth_dst=dst_mac),
-            p.OFPActionOutput(port)
-        ]
+        def route_actions(src_mac, dst_mac, port):
+            return [
+                p.OFPActionDecNwTtl(),
+                p.OFPActionSetField(eth_src=src_mac),
+                p.OFPActionSetField(eth_dst=dst_mac),
+                p.OFPActionOutput(port)
+            ]
 
-    # LAN -> FRR (port 2 -> port 1)
-    self.flow(dp, 100, dict(
-        in_port=router["lan_port"],
-        eth_type=ether_types.ETH_TYPE_IPV6,
-        eth_dst=router["lan_mac"],
-        ipv6_src=router["lan_host"],
-        ipv6_dst=("2000::", "e000::"),
-    ), route_actions(
-        router["transit_mac"],
-        router["frr_mac"],
-        router["transit_port"],
-    ))
+        # LAN -> FRR (port 2 -> port 1)
+        self.flow(dp, 100, dict(
+            in_port=router["lan_port"],
+            eth_type=ether_types.ETH_TYPE_IPV6,
+            eth_dst=router["lan_mac"],
+            ipv6_src=router["lan_host"],
+            ipv6_dst=("2000::", "e000::"),
+        ), route_actions(
+            router["transit_mac"],
+            router["frr_mac"],
+            router["transit_port"],
+        ))
 
-    # FRR -> LAN (port 1 -> port 2)
-    self.flow(dp, 100, dict(
-        in_port=router["transit_port"],
-        eth_type=ether_types.ETH_TYPE_IPV6,
-        eth_dst=router["transit_mac"],
-        ipv6_dst=router["lan_host"],
-    ), route_actions(
-        router["lan_mac"],
-        router["host_mac"],
-        router["lan_port"],
-    ))
+        # FRR -> LAN (port 1 -> port 2)
+        self.flow(dp, 100, dict(
+            in_port=router["transit_port"],
+            eth_type=ether_types.ETH_TYPE_IPV6,
+            eth_dst=router["transit_mac"],
+            ipv6_dst=router["lan_host"],
+        ), route_actions(
+            router["lan_mac"],
+            router["host_mac"],
+            router["lan_port"],
+        ))
 
+        self.logger.info(
+            "[OPENFLOW][S%d] %s; 2 IPv6 routes, OSPF/NDP punts",
+            dp.id,
+            "reconnected" if reconnected else "connected"
+        )
 
     @set_ev_cls(ofp_event.EventOFPStateChange, DEAD_DISPATCHER)
     def switch_disconnected(self, event):
         dp = event.datapath
+
         if self.datapaths.get(dp.id) is dp:
             del self.datapaths[dp.id]
             self.logger.warning("[OPENFLOW][S%d] disconnected", dp.id)
@@ -174,48 +179,77 @@ class MinimalOSPFv3Controller(app_manager.RyuApp):
         router = cfg.SWITCHES.get(dp.id)
         if router is None or self.datapaths.get(dp.id) is not dp:
             return
+        
         port = msg.match.get("in_port")
+
         if port not in (router["transit_port"], router["lan_port"]):
             return
 
         pkt = packet.Packet(msg.data)
         ip = pkt.get_protocol(ipv6.ipv6)
+
         if port == router["transit_port"] and ip is not None and ip.nxt == 89:
             self.peers[dp.id].receive(msg.data)
             return
+        
         eth = pkt.get_protocol(ethernet.ethernet)
         icmp = pkt.get_protocol(icmpv6.icmpv6)
+
         if eth is None or ip is None or icmp is None or ip.nxt != 58:
             return
+                
         if (icmp.type_ == icmpv6.ND_NEIGHBOR_SOLICIT
                 and isinstance(icmp.data, icmpv6.nd_neighbor)
-                and ip.hop_limit == 255 and icmp.code == 0 and ip.src != "::"):
+                and ip.hop_limit == 255
+                and icmp.code == 0
+                and ip.src != "::"):
+
             target = icmp.data.dst
-            lan = (port == router["lan_port"] and eth.src == router["host_mac"]
-                   and target == router["lan_gateway"])
-            transit = (port == router["transit_port"] and eth.src == router["frr_mac"]
-                       and target == router["link_local"])
-            
-        if lan or transit:
-            local_mac = (
-                router["lan_mac"] if lan
-                else router["transit_mac"]
+
+            lan = (
+                port == router["lan_port"]
+                and eth.src == router["host_mac"]
+                and target == router["lan_gateway"]
             )
+
+            transit = (
+                port == router["transit_port"]
+                and eth.src == router["frr_mac"]
+                and target == router["link_local"]
+            )
+
+            if lan or transit:
+                local_mac = (
+                    router["lan_mac"] if lan
+                    else router["transit_mac"]
+                )
+
+                self.send_packet(
+                    dp.id,
+                    self.neighbor_advertisement(
+                        local_mac,
+                        eth.src,
+                        ip.src,
+                        target
+                    ),
+                    port
+                )
+
+        elif (icmp.type_ == 128
+                and port == router["lan_port"]
+                and eth.src == router["host_mac"]
+                and ip.src == router["lan_host"]
+                and ip.dst == router["lan_gateway"]
+                and isinstance(icmp.data, icmpv6.echo)):
 
             self.send_packet(
                 dp.id,
-                self.neighbor_advertisement(
-                    local_mac,
+                self.echo_reply(
+                    router,
                     eth.src,
                     ip.src,
-                    target
+                    icmp.data
                 ),
                 port
             )
 
-        elif (icmp.type_ == 128 and port == router["lan_port"]
-              and eth.src == router["host_mac"] and ip.src == router["lan_host"]
-              and ip.dst == router["lan_gateway"]
-              and isinstance(icmp.data, icmpv6.echo)):
-            self.send_packet(dp.id, self.echo_reply(
-                router, eth.src, ip.src, icmp.data), port)
