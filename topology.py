@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Three-FRR-router triangle, two OVS routers and three test hosts."""
-
 import os
 import shlex
 import time
@@ -133,7 +131,7 @@ def main():
         start_frr(r1)
         start_frr(r2)
         start_frr(r3)
-        info("\nVerify: r1 vtysh -c 'show ipv6 ospf6 neighbor'\n")
+        info("        r1 vtysh -c 'show ipv6 ospf6 neighbor'\n")
         info("        r2 vtysh -c 'show ipv6 ospf6 neighbor'\n")
         info("        r2 vtysh -c 'show ipv6 route ospf6'\n")
         info("        r3 vtysh -c 'show ipv6 route ospf6'\n")

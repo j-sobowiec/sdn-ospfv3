@@ -1,5 +1,3 @@
-"""Two fixed SDN routers, indexed by OpenFlow datapath ID."""
-
 AREA_ID = "0.0.0.0"
 INSTANCE_ID = 0
 MTU = 1500

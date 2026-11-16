@@ -1,5 +1,3 @@
-"""One Ryu controller for two fixed IPv6/OSPFv3 OVS routers."""
-
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import (CONFIG_DISPATCHER, DEAD_DISPATCHER,
@@ -12,7 +10,7 @@ import config as cfg
 from peer import Peer
 
 
-class MinimalOSPFv3Controller(app_manager.RyuApp):
+class OSPFv3Controller(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):

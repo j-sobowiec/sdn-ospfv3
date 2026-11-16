@@ -1,5 +1,3 @@
-"""OSPFv3 wire encoding/validation; Scapy owns protocol serialization."""
-
 import ipaddress
 import struct
 

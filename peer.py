@@ -1,5 +1,3 @@
-"""One point-to-point OSPFv3 neighbor; FRRouting still performs SPF."""
-
 import ipaddress
 import struct
 import time
