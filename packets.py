@@ -70,15 +70,6 @@ def _validate_ospf_header(ip, hdr, raw):
         raise ValueError("invalid OSPFv3 checksum")
 
 
-def _validate_message_layout(packet_type, body):
-    """Check fixed-size fields and 4/12/20-byte item alignment."""
-    sizes = {1: (20, 4), 2: (12, 20), 3: (12, 12), 5: (20, 20)}
-    if packet_type in sizes:
-        base, item = sizes[packet_type]
-        if len(body) < base or (len(body) - base) % item:
-            raise ValueError("invalid OSPFv3 message length")
-
-
 def decode(frame, router):
     """Validate the envelope and non-LSU payload layout before dispatch."""
     eth = Ether(frame)
@@ -92,7 +83,12 @@ def decode(frame, router):
     hdr = OSPFv3_Hdr(raw)
     _validate_ospf_header(ip, hdr, raw)
     body = raw[16:]
-    _validate_message_layout(hdr.type, body)
+    # Only fixed-layout messages require an additional body-size check.
+    sizes = {1: (20, 4), 2: (12, 20), 3: (12, 12), 5: (20, 20)}
+    if hdr.type in sizes:
+        base, item = sizes[hdr.type]
+        if len(body) < base or (len(body) - base) % item:
+            raise ValueError("invalid OSPFv3 message length")
     return eth, ip, hdr, body
 
 

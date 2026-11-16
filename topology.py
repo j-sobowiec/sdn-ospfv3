@@ -131,13 +131,15 @@ def main():
         start_frr(r1)
         start_frr(r2)
         start_frr(r3)
+
+        info("        List of Commands: \n")
         info("        r1 vtysh -c 'show ipv6 ospf6 neighbor'\n")
         info("        r2 vtysh -c 'show ipv6 ospf6 neighbor'\n")
         info("        r2 vtysh -c 'show ipv6 route ospf6'\n")
         info("        r3 vtysh -c 'show ipv6 route ospf6'\n")
-        info("        h1 ping -6 -c 3 2001:db8:2::100  # H1 -> H2 (both SDN)\n")
+        info("        h1 ping -6 -c 3 2001:db8:2::100  # H1 -> H2\n")
         info("        h2 ping -6 -c 3 2001:db8:1::100  # H2 -> H1\n")
-        info("        h1 ping -6 -c 3 2001:db8:3::100  # H1 -> H3 (R3 LAN)\n")
+        info("        h1 ping -6 -c 3 2001:db8:3::100  # H1 -> H3\n")
         info("        h3 ping -6 -c 3 2001:db8:2::100  # H3 -> H2\n")
         CLI(net)
     finally:

@@ -59,6 +59,14 @@ class Peer:
         self.local_refreshed_at = 0
         self.pending_acks = {}
 
+    def _bump_local_lsa(self, observed_sequence):
+        """Recover our own LSA sequence without duplicating origination logic."""
+        highest = max(lsa_seq_rank(self.local_sequence),
+                      lsa_seq_rank(observed_sequence))
+        self.local_sequence = (highest ^ 0x80000000) + 1
+        self.local = packets.local_lsas(
+            self.router, self.router_id, self.interface_id, self.local_sequence)
+
     def send_hello(self):
         neighbors = [self.router_id] if self.router_id else []
         self.send(packets.hello(self.router, neighbors))
@@ -198,9 +206,7 @@ class Peer:
                 lsa_seq_rank(newest_self) >= lsa_seq_rank(self.local_sequence)):
             if newest_self == 0x7fffffff:
                 raise ValueError("local LSA sequence number exhausted")
-            self.local_sequence = newest_self + 1
-            self.local = packets.local_lsas(
-                self.router, self.router_id, self.interface_id, self.local_sequence)
+            self._bump_local_lsa(newest_self)
 
     def on_dbd(self, desc, body):
         if self.stage not in ("two-way", "exstart", "exchange", "loading",
@@ -333,12 +339,7 @@ class Peer:
                 self.log.error("[OSPF][%s] cannot fight back MaxSequenceNumber LSA",
                                self.label)
             else:
-                self.local_sequence = max(
-                    lsa_seq_rank(self.local_sequence),
-                    lsa_seq_rank(newest_self)) ^ 0x80000000
-                self.local_sequence += 1
-                self.local = packets.local_lsas(
-                    self.router, self.router_id, self.interface_id, self.local_sequence)
+                self._bump_local_lsa(newest_self)
                 if self.stage == "synchronized":
                     self.send_local_update()
                     self.local_refreshed_at = self.clock()

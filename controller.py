@@ -140,46 +140,32 @@ class OSPFv3Controller(app_manager.RyuApp):
             self.logger.warning("[OPENFLOW][S%d] disconnected", dp.id)
 
     
-    def neighbor_advertisement(self, local_mac, mac, address, target):
+    def _icmpv6_frame(self, src_mac, dst_mac, src_ip, dst_ip, hop_limit,
+                      icmp_type, icmp_data):
+        """Shared Ethernet/IPv6 framing for gateway replies."""
         pkt = packet.Packet()
-
         pkt.add_protocol(ethernet.ethernet(
-            dst=mac,
-            src=local_mac,
-            ethertype=ether_types.ETH_TYPE_IPV6
-        ))
-
+            dst=dst_mac, src=src_mac, ethertype=ether_types.ETH_TYPE_IPV6))
         pkt.add_protocol(ipv6.ipv6(
-            src=target,
-            dst=address,
-            nxt=58,
-            hop_limit=255
-        ))
-
+            src=src_ip, dst=dst_ip, nxt=58, hop_limit=hop_limit))
         pkt.add_protocol(icmpv6.icmpv6(
-            type_=icmpv6.ND_NEIGHBOR_ADVERT,
-            code=0,
-            csum=0,
-            data=icmpv6.nd_neighbor(
-                res=0x7,
-                dst=target,
-                option=icmpv6.nd_option_tla(
-                    hw_src=local_mac
-                )
-            )
-        ))
-
+            type_=icmp_type, code=0, csum=0, data=icmp_data))
         pkt.serialize()
         return bytes(pkt.data)
 
+    def neighbor_advertisement(self, local_mac, mac, address, target):
+        nd = icmpv6.nd_neighbor(
+            res=0x7, dst=target,
+            option=icmpv6.nd_option_tla(hw_src=local_mac))
+        return self._icmpv6_frame(
+            local_mac, mac, target, address, 255,
+            icmpv6.ND_NEIGHBOR_ADVERT, nd)
 
     def echo_reply(self, router, mac, address, echo):
-        pkt = packet.Packet()
-        pkt.add_protocol(ethernet.ethernet(dst=mac, src=router["lan_mac"], ethertype=ether_types.ETH_TYPE_IPV6))
-        pkt.add_protocol(ipv6.ipv6(src=router["lan_gateway"], dst=address, nxt=58, hop_limit=64))
-        pkt.add_protocol(icmpv6.icmpv6(type_=129, code=0, csum=0, data=icmpv6.echo(id_=echo.id, seq=echo.seq, data=echo.data)))
-        pkt.serialize()
-        return bytes(pkt.data)
+        response = icmpv6.echo(id_=echo.id, seq=echo.seq, data=echo.data)
+        return self._icmpv6_frame(
+            router["lan_mac"], mac, router["lan_gateway"], address,
+            64, 129, response)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in(self, event):
