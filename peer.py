@@ -64,14 +64,25 @@ class Peer:
         self.send(packets.hello(self.router, neighbors))
 
     def tick(self):
+        """Advance the protocol timers in the same order as the baseline."""
         now = self.clock()
+        self._expire_neighbor_if_needed(now)
+        self._send_periodic_hello(now)
+        self._retransmit_due_packets(now)
+        self._refresh_local_lsas(now)
+
+    def _expire_neighbor_if_needed(self, now):
         if self.last_hello is not None and now - self.last_hello >= cfg.DEAD_INTERVAL:
             self.log.warning("[OSPF][%s] neighbor %s dead; adjacency reset",
                              self.label, self.router_id)
             self.reset()
+
+    def _send_periodic_hello(self, now):
         if now >= self.next_hello:
             self.send_hello()
             self.next_hello = now + cfg.HELLO_INTERVAL
+
+    def _retransmit_due_packets(self, now):
         if (self.stage in ("exstart", "exchange") and self.last_dbd
                 and now - self.dbd_sent_at >= cfg.RETRANSMIT_INTERVAL):
             self.send(self.last_dbd)
@@ -82,6 +93,8 @@ class Peer:
         if (self.pending_acks and now - self.local_sent_at
                 >= cfg.RETRANSMIT_INTERVAL):
             self.send_local_update(list(self.pending_acks))
+
+    def _refresh_local_lsas(self, now):
         if (self.stage == "synchronized" and not self.pending_acks
                 and now - self.local_refreshed_at >= cfg.LS_REFRESH_INTERVAL):
             self.local_sequence += 1
@@ -94,27 +107,31 @@ class Peer:
     def receive(self, data):
         try:
             eth, ip, hdr, body = packets.decode(data, self.router)
-            if hdr.src == self.router["router_id"]:
-                return
-            if hdr.type == 1:
-                self.on_hello(eth, ip, hdr, body)
-                return
-            if self.stage in ("down", "init"):
-                # DBD/LSU can arrive before bidirectional Hello discovery.
-                # Ignore them without flooding WARNING at startup.
-                return
-            if (hdr.src != self.router_id or ip.src != self.address
-                    or eth.src != self.mac):
-                raise ValueError("packet from unexpected neighbor")
-            if hdr.type == 2:
-                self.on_dbd(hdr.payload, body)
-                return
-            handlers = {3: self.on_lsr, 4: self.on_lsu, 5: self.on_lsack}
-            if hdr.type in handlers:
-                handlers[hdr.type](body)
+            self._dispatch_ospf(eth, ip, hdr, body)
         except (ValueError, IndexError, TypeError, struct.error,
                 Scapy_Exception) as exc:
             self.log.warning("[OSPF][%s][DROP] %s", self.label, exc)
+
+    def _dispatch_ospf(self, eth, ip, hdr, body):
+        """Route validated OSPFv3 messages to the existing state handlers."""
+        if hdr.src == self.router["router_id"]:
+            return
+        if hdr.type == 1:
+            self.on_hello(eth, ip, hdr, body)
+            return
+        if self.stage in ("down", "init"):
+            # DBD/LSU can arrive before bidirectional Hello discovery.
+            # Ignore them without flooding WARNING at startup.
+            return
+        if (hdr.src != self.router_id or ip.src != self.address
+                or eth.src != self.mac):
+            raise ValueError("packet from unexpected neighbor")
+        if hdr.type == 2:
+            self.on_dbd(hdr.payload, body)
+            return
+        handlers = {3: self.on_lsr, 4: self.on_lsu, 5: self.on_lsack}
+        if hdr.type in handlers:
+            handlers[hdr.type](body)
 
     def on_hello(self, eth, ip, hdr, body):
         hello = hdr.payload

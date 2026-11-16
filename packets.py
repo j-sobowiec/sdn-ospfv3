@@ -46,12 +46,8 @@ def lsa_headers(raw):
     return result
 
 
-def decode(frame, router):
-    """Validate the envelope and non-LSU payload layout before dispatch."""
-    eth = Ether(frame)
-    if not eth.haslayer(IPv6):
-        raise ValueError("not IPv6")
-    ip = eth[IPv6]
+def _validate_ipv6_envelope(ip, router):
+    """Enforce OSPFv3 link-scope IPv6 addressing and Hop Limit."""
     if ip.nh != 89:
         raise ValueError("not OSPFv3")
     if ip.hlim < 1 or (ip.dst in (ALL_ROUTERS, "ff02::6") and ip.hlim != 1):
@@ -60,10 +56,10 @@ def decode(frame, router):
         raise ValueError("OSPFv3 source must be link-local")
     if ip.dst not in (ALL_ROUTERS, "ff02::6", router["link_local"]):
         raise ValueError("unexpected OSPFv3 destination")
-    raw = bytes(ip.payload)
-    if len(raw) < 16:
-        raise ValueError("short OSPFv3 packet")
-    hdr = OSPFv3_Hdr(raw)
+
+
+def _validate_ospf_header(ip, hdr, raw):
+    """Verify OSPFv3 identity, packet length and checksum."""
     if (hdr.version != 3 or hdr.area != cfg.AREA_ID or
             hdr.instance != cfg.INSTANCE_ID or hdr.len != len(raw)):
         raise ValueError("OSPFv3 version, area, instance or length mismatch")
@@ -72,12 +68,31 @@ def decode(frame, router):
     calculated = in6_chksum(89, IPv6(src=ip.src, dst=ip.dst, nh=89), bytes(check))
     if hdr.chksum != calculated:
         raise ValueError("invalid OSPFv3 checksum")
-    body = raw[16:]
+
+
+def _validate_message_layout(packet_type, body):
+    """Check fixed-size fields and 4/12/20-byte item alignment."""
     sizes = {1: (20, 4), 2: (12, 20), 3: (12, 12), 5: (20, 20)}
-    if hdr.type in sizes:
-        base, item = sizes[hdr.type]
+    if packet_type in sizes:
+        base, item = sizes[packet_type]
         if len(body) < base or (len(body) - base) % item:
             raise ValueError("invalid OSPFv3 message length")
+
+
+def decode(frame, router):
+    """Validate the envelope and non-LSU payload layout before dispatch."""
+    eth = Ether(frame)
+    if not eth.haslayer(IPv6):
+        raise ValueError("not IPv6")
+    ip = eth[IPv6]
+    _validate_ipv6_envelope(ip, router)
+    raw = bytes(ip.payload)
+    if len(raw) < 16:
+        raise ValueError("short OSPFv3 packet")
+    hdr = OSPFv3_Hdr(raw)
+    _validate_ospf_header(ip, hdr, raw)
+    body = raw[16:]
+    _validate_message_layout(hdr.type, body)
     return eth, ip, hdr, body
 
 

@@ -62,6 +62,20 @@ class OSPFv3Controller(app_manager.RyuApp):
                 self.logger, label=f"S{dp.id}")
         else:
             self.peers[dp.id].reset()
+        self.install_control_plane_flows(dp, router)
+        self.install_ipv6_routes(dp, router)
+
+        self.logger.info(
+            "[OPENFLOW][S%d] %s; 2 IPv6 routes, OSPF/NDP punts",
+            dp.id,
+            "reconnected" if reconnected else "connected"
+        )
+
+    def install_control_plane_flows(self, dp, router):
+        """Reset table 0 and punt OSPFv3/NDP/local-LAN traffic to Ryu.
+
+        Order and priorities intentionally match the baseline implementation.
+        """
         p, ofp = dp.ofproto_parser, dp.ofproto
         dp.send_msg(p.OFPFlowMod(
             datapath=dp, command=ofp.OFPFC_DELETE, table_id=0,
@@ -81,6 +95,9 @@ class OSPFv3Controller(app_manager.RyuApp):
             ipv6_dst=(router["lan_prefix"].split("/")[0],
                       "ffff:ffff:ffff:ffff::")), punt)
         
+    def install_ipv6_routes(self, dp, router):
+        """Install the two fixed IPv6 forwarding rules for this OVS."""
+        p = dp.ofproto_parser
         def route_actions(src_mac, dst_mac, port):
             return [
                 p.OFPActionDecNwTtl(),
@@ -113,12 +130,6 @@ class OSPFv3Controller(app_manager.RyuApp):
             router["host_mac"],
             router["lan_port"],
         ))
-
-        self.logger.info(
-            "[OPENFLOW][S%d] %s; 2 IPv6 routes, OSPF/NDP punts",
-            dp.id,
-            "reconnected" if reconnected else "connected"
-        )
 
     @set_ev_cls(ofp_event.EventOFPStateChange, DEAD_DISPATCHER)
     def switch_disconnected(self, event):
