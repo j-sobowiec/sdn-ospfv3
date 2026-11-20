@@ -82,7 +82,7 @@ class ControllerIsolationTests(unittest.TestCase):
             sys.modules.pop("controller", None)
             try:
                 controller_module = importlib.import_module("controller")
-                app = controller_module.MinimalOSPFv3Controller()
+                app = controller_module.OSPFv3Controller()
                 first, second = FakeDatapath(1), FakeDatapath(2)
                 for dp in (first, second):
                     app.switch_ready(types.SimpleNamespace(
@@ -102,10 +102,10 @@ class ControllerIsolationTests(unittest.TestCase):
                                         for m in matches))
                     outbound, inbound = routes(dp)
                     self.assertEqual(action_fields(outbound), {
-                        "eth_src": router["gateway_mac"],
+                        "eth_src": router["transit_mac"],
                         "eth_dst": router["frr_mac"]})
                     self.assertEqual(action_fields(inbound), {
-                        "eth_src": router["gateway_mac"],
+                        "eth_src": router["lan_mac"],
                         "eth_dst": router["host_mac"]})
                     actions = [flow["instructions"][0][1][1]
                                for flow in routes(dp)]

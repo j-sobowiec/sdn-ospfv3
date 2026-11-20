@@ -102,14 +102,18 @@ def assert_neighbors(net, timeout=140):
 
 
 def assert_routes(net):
-    for node_name, prefixes in PREFIX_ROUTES.items():
-        node = net.get(node_name)
-        status, output = node_command(node, "vtysh -c 'show ipv6 route ospf6'")
-        require(status == 0, f"FRR OSPF route query failed on {node_name}: {output}")
-        for prefix in prefixes:
-            require(prefix in output,
-                    f"Missing OSPF route {prefix} on {node_name}:\n{output}")
-    report("Remote OSPFv3 routes on R1/R2/R3")
+    def ready():
+        missing = []
+        for node_name, prefixes in PREFIX_ROUTES.items():
+            status, output = node_command(
+                net.get(node_name), "vtysh -c 'show ipv6 route ospf6'")
+            require(status == 0, f"FRR OSPF route query failed on {node_name}: {output}")
+            for prefix in prefixes:
+                if prefix not in output:
+                    missing.append(f"Missing OSPF route {prefix} on {node_name}:\n{output}")
+        return not missing, "\n".join(missing)
+
+    wait_for(ready, "Remote OSPFv3 routes on R1/R2/R3", timeout=60)
 
 
 def assert_pings(net, label):

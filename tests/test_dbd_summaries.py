@@ -4,7 +4,9 @@ import logging
 import unittest
 from unittest.mock import patch
 
-from scapy.contrib.ospf import OSPFv3_DBDesc, OSPFv3_LSA_Hdr, OSPFv3_LSReq_Item
+from scapy.contrib.ospf import OSPFv3_DBDesc, OSPFv3_Hdr, OSPFv3_LSA_Hdr, OSPFv3_LSReq_Item
+from scapy.layers.inet6 import IPv6
+from scapy.layers.l2 import Ether
 
 import config as cfg
 import packets
@@ -95,7 +97,8 @@ class DBDSummaryTests(unittest.TestCase):
                     for key in peer.local)
                 peer.on_lsr(requests)
                 self.assertEqual(len(sent), 1)
-                _, _, hdr, body = packets.decode(sent[0], router)
+                wire = bytes(Ether(sent[0])[IPv6].payload)
+                hdr, body = OSPFv3_Hdr(wire), wire[16:]
                 self.assertEqual(hdr.type, 4)
                 self.assertEqual([wire for _, wire in packets.lsa_headers(body)],
                                  list(peer.local.values()))
