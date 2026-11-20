@@ -110,9 +110,10 @@ def hello(router, neighbors=()):
     return frame(router, 1, body)
 
 
-def dbd(router, sequence, flags):
+def dbd(router, sequence, flags, headers=()):
+    items = [OSPFv3_LSA_Hdr(bytes(h)[:20]) for h in headers]
     return frame(router, 2, OSPFv3_DBDesc(mtu=cfg.MTU, options=cfg.OPTIONS,
-                                          dbdescr=flags, ddseq=sequence, lsaheaders=[]))
+                                          dbdescr=flags, ddseq=sequence, lsaheaders=items))
 
 
 def lsr(router, requests, dst, mac):

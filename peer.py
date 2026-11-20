@@ -185,8 +185,8 @@ class Peer:
             self.log.info("[OSPF][%s] neighbor %s: Init -> 2-Way",
                           self.label, self.router_id)
 
-    def send_dbd(self, flags):
-        data = packets.dbd(self.router, self.sequence, flags)
+    def send_dbd(self, flags, headers=()):
+        data = packets.dbd(self.router, self.sequence, flags, headers)
         if self.send(data):
             self.last_dbd = data
             self.dbd_sent_at = self.clock()
@@ -254,9 +254,11 @@ class Peer:
         self.last_peer_dbd = identity
         self.remember_summaries(body)
         if self.stage == "exstart" or flags & 2:
+            headers = ([wire[:20] for wire in self.local.values()]
+                       if self.stage == "exstart" else ())
             self.stage = "exchange"
             self.sequence = (self.sequence + 1) & 0xffffffff
-            self.send_dbd(1)
+            self.send_dbd(1, headers)
         else:
             self.last_dbd = None
             self.stage = "loading"
