@@ -45,6 +45,8 @@ class DBDSummaryTests(unittest.TestCase):
                 self.assertEqual(initial.ddseq, peer.sequence)
                 self.assertEqual(len(body), 12)
                 self.assertEqual(len(initial.lsaheaders), 0)
+                peer._retransmit_due_packets(peer.dbd_sent_at + cfg.RETRANSMIT_INTERVAL)
+                self.assertEqual(sent[-1], sent[-2])
 
                 # A summary of a newer self-originated LSA must be reflected
                 # in the headers sent next, and in the eventual LSU body.
@@ -68,6 +70,8 @@ class DBDSummaryTests(unittest.TestCase):
 
                 # Duplicate slave DBD retransmits the identical master packet.
                 last = sent[-1]
+                peer._retransmit_due_packets(peer.dbd_sent_at + cfg.RETRANSMIT_INTERVAL)
+                self.assertEqual(sent[-1], last)
                 remote_dbd(2, initial.ddseq, [newer])
                 self.assertEqual(sent[-1], last)
                 self.assertEqual(peer.sequence, advertised.ddseq)
